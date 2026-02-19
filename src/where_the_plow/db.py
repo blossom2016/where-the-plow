@@ -10,13 +10,19 @@ from operator import itemgetter
 class Database:
     def __init__(self, path: str):
         self.path = path
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self.conn = duckdb.connect(path)
 
-    def init(self):
-        self.conn.execute("INSTALL spatial")
-        self.conn.execute("LOAD spatial")
+    def _cursor(self) -> duckdb.DuckDBPyConnection:
+        """Create a thread-local cursor for safe concurrent access."""
+        return self.conn.cursor()
 
-        self.conn.execute("""
+    def init(self):
+        cur = self._cursor()
+        cur.execute("INSTALL spatial")
+        cur.execute("LOAD spatial")
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS vehicles (
                 vehicle_id    VARCHAR PRIMARY KEY,
                 description   VARCHAR,
@@ -25,10 +31,10 @@ class Database:
                 last_seen     TIMESTAMPTZ NOT NULL
             )
         """)
-        self.conn.execute("""
+        cur.execute("""
             CREATE SEQUENCE IF NOT EXISTS positions_seq
         """)
-        self.conn.execute("""
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS positions (
                 id            BIGINT DEFAULT nextval('positions_seq'),
                 vehicle_id    VARCHAR NOT NULL,
@@ -43,27 +49,28 @@ class Database:
                 PRIMARY KEY (vehicle_id, timestamp)
             )
         """)
-        self.conn.execute("""
+        cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_positions_time_geo
                 ON positions (timestamp, latitude, longitude)
         """)
 
         # Migration: add geom column to existing tables that lack it
-        cols = self.conn.execute(
+        cols = cur.execute(
             "SELECT column_name FROM information_schema.columns "
             "WHERE table_name='positions' AND column_name='geom'"
         ).fetchall()
         if not cols:
-            self.conn.execute("ALTER TABLE positions ADD COLUMN geom GEOMETRY")
+            cur.execute("ALTER TABLE positions ADD COLUMN geom GEOMETRY")
 
         # Backfill geom for existing rows
-        self.conn.execute(
+        cur.execute(
             "UPDATE positions SET geom = ST_Point(longitude, latitude) WHERE geom IS NULL"
         )
 
     def upsert_vehicles(self, vehicles: list[dict], now: datetime):
+        cur = self._cursor()
         for v in vehicles:
-            self.conn.execute(
+            cur.execute(
                 """
                 INSERT INTO vehicles (vehicle_id, description, vehicle_type, first_seen, last_seen)
                 VALUES (?, ?, ?, ?, ?)
@@ -78,9 +85,10 @@ class Database:
     def insert_positions(self, positions: list[dict], collected_at: datetime) -> int:
         if not positions:
             return 0
-        count_before = self.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+        cur = self._cursor()
+        count_before = cur.execute("SELECT count(*) FROM positions").fetchone()[0]
         for p in positions:
-            self.conn.execute(
+            cur.execute(
                 """
                 INSERT OR IGNORE INTO positions
                     (vehicle_id, timestamp, collected_at, longitude, latitude, geom, bearing, speed, is_driving)
@@ -99,7 +107,7 @@ class Database:
                     p["is_driving"],
                 ],
             )
-        count_after = self.conn.execute("SELECT count(*) FROM positions").fetchone()[0]
+        count_after = cur.execute("SELECT count(*) FROM positions").fetchone()[0]
         return count_after - count_before
 
     def get_latest_positions(
@@ -123,7 +131,7 @@ class Database:
             ORDER BY timestamp ASC
             LIMIT $2
         """
-        rows = self.conn.execute(query, [after, limit]).fetchall()
+        rows = self._cursor().execute(query, [after, limit]).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def get_nearby_vehicles(
@@ -154,7 +162,11 @@ class Database:
             ORDER BY timestamp ASC
             LIMIT $5
         """
-        rows = self.conn.execute(query, [lng, lat, radius_deg, after, limit]).fetchall()
+        rows = (
+            self._cursor()
+            .execute(query, [lng, lat, radius_deg, after, limit])
+            .fetchall()
+        )
         return [self._row_to_dict(r) for r in rows]
 
     def get_vehicle_history(
@@ -179,9 +191,11 @@ class Database:
             ORDER BY p.timestamp ASC
             LIMIT $5
         """
-        rows = self.conn.execute(
-            query, [vehicle_id, since, until, after, limit]
-        ).fetchall()
+        rows = (
+            self._cursor()
+            .execute(query, [vehicle_id, since, until, after, limit])
+            .fetchall()
+        )
         return [self._row_to_dict(r) for r in rows]
 
     def get_coverage(
@@ -204,7 +218,7 @@ class Database:
             ORDER BY p.timestamp ASC
             LIMIT $4
         """
-        rows = self.conn.execute(query, [since, until, after, limit]).fetchall()
+        rows = self._cursor().execute(query, [since, until, after, limit]).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     def get_coverage_trails(
@@ -224,7 +238,7 @@ class Database:
             AND p.timestamp <= $2
             ORDER BY p.vehicle_id, p.timestamp ASC
         """
-        rows = self.conn.execute(query, [since, until]).fetchall()
+        rows = self._cursor().execute(query, [since, until]).fetchall()
 
         trails = []
         for vid, group in groupby(rows, key=itemgetter(0)):
@@ -294,15 +308,18 @@ class Database:
         }
 
     def get_stats(self) -> dict:
-        total_positions = self.conn.execute(
-            "SELECT count(*) FROM positions"
-        ).fetchone()[0]
-        total_vehicles = self.conn.execute("SELECT count(*) FROM vehicles").fetchone()[
-            0
-        ]
-        active_vehicles = self.conn.execute(
+        cur = self._cursor()
+        row = cur.execute("SELECT count(*) FROM positions").fetchone()
+        total_positions = row[0] if row else 0
+
+        row = cur.execute("SELECT count(*) FROM vehicles").fetchone()
+        total_vehicles = row[0] if row else 0
+
+        row = cur.execute(
             "SELECT count(DISTINCT vehicle_id) FROM positions WHERE is_driving = 'maybe'"
-        ).fetchone()[0]
+        ).fetchone()
+        active_vehicles = row[0] if row else 0
+
         try:
             db_size_bytes = os.path.getsize(self.path)
         except OSError:
@@ -314,11 +331,12 @@ class Database:
             "db_size_bytes": db_size_bytes,
         }
         if total_positions > 0:
-            row = self.conn.execute(
+            row = cur.execute(
                 "SELECT min(timestamp), max(timestamp) FROM positions"
             ).fetchone()
-            result["earliest"] = row[0]
-            result["latest"] = row[1]
+            if row:
+                result["earliest"] = row[0]
+                result["latest"] = row[1]
         return result
 
     def close(self):
