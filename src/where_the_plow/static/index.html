@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Where the Plow</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" />
+  <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    #info-panel {
+      position: absolute;
+      bottom: 24px;
+      right: 12px;
+      background: rgba(20, 20, 30, 0.85);
+      color: #e5e7eb;
+      padding: 14px 18px;
+      border-radius: 8px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      z-index: 10;
+      min-width: 180px;
+      backdrop-filter: blur(6px);
+    }
+    #info-panel h3 {
+      margin: 0 0 6px 0;
+      font-size: 15px;
+      color: #f9fafb;
+    }
+    #info-panel a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+    #info-panel a:hover {
+      text-decoration: underline;
+    }
+    #vehicle-count {
+      color: #9ca3af;
+      font-size: 12px;
+      margin-top: 6px;
+    }
+    .maplibregl-popup-content {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 10px 14px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="info-panel">
+    <h3>Where the Plow</h3>
+    <a href="/docs">API Documentation</a>
+    <div id="vehicle-count">Loading vehicles...</div>
+  </div>
+  <script>
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://tiles.openfreemap.org/styles/liberty',
+      center: [-52.71, 47.56],
+      zoom: 12,
+    });
+
+    function formatTimestamp(ts) {
+      const d = new Date(ts);
+      return d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    }
+
+    function updateVehicleCount(data) {
+      const count = data.features ? data.features.length : 0;
+      document.getElementById('vehicle-count').textContent =
+        count + ' vehicle' + (count !== 1 ? 's' : '') + ' tracked';
+    }
+
+    async function fetchVehicles() {
+      const resp = await fetch('/vehicles');
+      return resp.json();
+    }
+
+    map.on('load', async () => {
+      const data = await fetchVehicles();
+      updateVehicleCount(data);
+
+      map.addSource('vehicles', {
+        type: 'geojson',
+        data: data,
+      });
+
+      map.addLayer({
+        id: 'vehicle-circles',
+        type: 'circle',
+        source: 'vehicles',
+        paint: {
+          'circle-color': [
+            'match',
+            ['get', 'vehicle_type'],
+            'SA PLOW TRUCK', '#2563eb',
+            'TA PLOW TRUCK', '#2563eb',
+            'LOADER', '#ea580c',
+            'GRADER', '#16a34a',
+            '#6b7280',
+          ],
+          'circle-radius': 7,
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      });
+
+      // Pointer cursor on hover
+      map.on('mouseenter', 'vehicle-circles', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'vehicle-circles', () => {
+        map.getCanvas().style.cursor = '';
+      });
+
+      // Click popup
+      map.on('click', 'vehicle-circles', (e) => {
+        const feature = e.features[0];
+        const p = feature.properties;
+        const coords = feature.geometry.coordinates.slice();
+
+        // Handle wrapping
+        while (Math.abs(e.lngLat.lng - coords[0]) > 180) {
+          coords[0] += e.lngLat.lng > coords[0] ? 360 : -360;
+        }
+
+        const html = `
+          <div>
+            <strong>${p.description}</strong><br/>
+            ${p.vehicle_type}<br/>
+            Speed: ${p.speed} km/h<br/>
+            Bearing: ${p.bearing}&deg;<br/>
+            Updated: ${formatTimestamp(p.timestamp)}
+          </div>
+        `;
+
+        new maplibregl.Popup({ offset: 12 })
+          .setLngLat(coords)
+          .setHTML(html)
+          .addTo(map);
+      });
+
+      // Auto-refresh
+      setInterval(async () => {
+        try {
+          const freshData = await fetchVehicles();
+          map.getSource('vehicles').setData(freshData);
+          updateVehicleCount(freshData);
+        } catch (err) {
+          console.error('Failed to refresh vehicles:', err);
+        }
+      }, 6000);
+    });
+  </script>
+</body>
+</html>

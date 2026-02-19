@@ -2,8 +2,11 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from where_the_plow import collector
 from where_the_plow.config import settings
@@ -43,6 +46,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(router)
+
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return FileResponse(str(STATIC_DIR / "index.html"))
 
 
 @app.get("/health", tags=["system"])
