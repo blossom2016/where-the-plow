@@ -1,4 +1,3 @@
-import os
 from where_the_plow.config import Settings
 
 
