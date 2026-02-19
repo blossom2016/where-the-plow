@@ -75,6 +75,34 @@ def test_client():
                     ],
                     now,
                 )
+                # Additional positions for v1 to enable coverage trail testing
+                from datetime import timedelta
+
+                ts2 = ts + timedelta(seconds=30)
+                ts3 = ts + timedelta(seconds=60)
+                db.insert_positions(
+                    [
+                        {
+                            "vehicle_id": "v1",
+                            "timestamp": ts2,
+                            "longitude": -52.74,
+                            "latitude": 47.57,
+                            "bearing": 90,
+                            "speed": 15.0,
+                            "is_driving": "maybe",
+                        },
+                        {
+                            "vehicle_id": "v1",
+                            "timestamp": ts3,
+                            "longitude": -52.75,
+                            "latitude": 47.58,
+                            "bearing": 180,
+                            "speed": 20.0,
+                            "is_driving": "maybe",
+                        },
+                    ],
+                    now,
+                )
                 yield client
 
     if os.path.exists(path):
@@ -106,7 +134,8 @@ def test_get_vehicles_pagination(test_client):
 
 
 def test_get_vehicles_nearby(test_client):
-    resp = test_client.get("/vehicles/nearby?lat=47.56&lng=-52.73&radius=1000")
+    # v1's latest position is (-52.75, 47.58); use a radius that captures it
+    resp = test_client.get("/vehicles/nearby?lat=47.58&lng=-52.75&radius=1000")
     assert resp.status_code == 200
     data = resp.json()
     assert data["type"] == "FeatureCollection"
@@ -132,14 +161,21 @@ def test_get_coverage(test_client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["type"] == "FeatureCollection"
-    assert len(data["features"]) == 2
+    # v1 has 3 positions (trail), v2 has 1 (excluded)
+    assert len(data["features"]) == 1
+    f = data["features"][0]
+    assert f["geometry"]["type"] == "LineString"
+    assert len(f["geometry"]["coordinates"]) >= 2
+    assert f["properties"]["vehicle_id"] == "v1"
+    assert "timestamps" in f["properties"]
+    assert len(f["properties"]["timestamps"]) == len(f["geometry"]["coordinates"])
 
 
 def test_get_stats(test_client):
     resp = test_client.get("/stats")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["total_positions"] == 2
+    assert data["total_positions"] == 4
     assert data["total_vehicles"] == 2
 
 

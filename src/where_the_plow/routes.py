@@ -4,9 +4,13 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Query, Request
 
 from where_the_plow.models import (
+    CoverageFeature,
+    CoverageFeatureCollection,
+    CoverageProperties,
     Feature,
     FeatureCollection,
     FeatureProperties,
+    LineStringGeometry,
     Pagination,
     PointGeometry,
     StatsResponse,
@@ -142,35 +146,42 @@ def get_vehicle_history(
 
 @router.get(
     "/coverage",
-    response_model=FeatureCollection,
-    summary="Position coverage",
-    description="Returns all recorded positions within a time range as a GeoJSON "
-    "FeatureCollection. Useful for heatmap visualization.",
+    response_model=CoverageFeatureCollection,
+    summary="Coverage trails",
+    description="Returns per-vehicle LineString trails within a time range, "
+    "downsampled to ~1 point per 30 seconds. Each feature includes a "
+    "parallel timestamps array for recency-based visualization.",
     tags=["coverage"],
 )
 def get_coverage(
     request: Request,
     since: datetime | None = Query(
-        None, description="Start of time range (ISO 8601). Default: 4 hours ago."
+        None, description="Start of time range (ISO 8601). Default: 24 hours ago."
     ),
     until: datetime | None = Query(
         None, description="End of time range (ISO 8601). Default: now."
-    ),
-    limit: int = Query(
-        DEFAULT_LIMIT, ge=1, le=MAX_LIMIT, description="Max features per page"
-    ),
-    after: datetime | None = Query(
-        None, description="Cursor: return features after this timestamp (ISO 8601)"
     ),
 ):
     db = request.app.state.db
     now = datetime.now(timezone.utc)
     if since is None:
-        since = now - timedelta(hours=4)
+        since = now - timedelta(hours=24)
     if until is None:
         until = now
-    rows = db.get_coverage(since=since, until=until, limit=limit, after=after)
-    return _rows_to_feature_collection(rows, limit)
+    trails = db.get_coverage_trails(since=since, until=until)
+    features = [
+        CoverageFeature(
+            geometry=LineStringGeometry(coordinates=t["coordinates"]),
+            properties=CoverageProperties(
+                vehicle_id=t["vehicle_id"],
+                vehicle_type=t["vehicle_type"],
+                description=t["description"],
+                timestamps=t["timestamps"],
+            ),
+        )
+        for t in trails
+    ]
+    return CoverageFeatureCollection(features=features)
 
 
 @router.get(
