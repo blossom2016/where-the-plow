@@ -20,7 +20,7 @@
     }
     #info-panel {
       position: absolute;
-      bottom: 24px;
+      top: 12px;
       right: 12px;
       background: rgba(20, 20, 30, 0.85);
       color: #e5e7eb;
@@ -96,6 +96,38 @@
       return resp.json();
     }
 
+    // Track the currently open popup and which vehicle it belongs to
+    let activePopup = null;
+    let activeVehicleId = null;
+
+    function buildPopupHtml(p) {
+      return `
+        <div>
+          <strong>${p.description}</strong><br/>
+          ${p.vehicle_type}<br/>
+          Speed: ${p.speed} km/h<br/>
+          Bearing: ${p.bearing}&deg;<br/>
+          Updated: ${formatTimestamp(p.timestamp)}
+        </div>
+      `;
+    }
+
+    function updatePopupFromData(data) {
+      if (!activePopup || !activeVehicleId) return;
+      const feature = data.features.find(
+        f => f.properties.vehicle_id === activeVehicleId
+      );
+      if (!feature) {
+        // Vehicle disappeared from results, close popup
+        activePopup.remove();
+        activePopup = null;
+        activeVehicleId = null;
+        return;
+      }
+      activePopup.setLngLat(feature.geometry.coordinates);
+      activePopup.setHTML(buildPopupHtml(feature.properties));
+    }
+
     map.on('load', async () => {
       const data = await fetchVehicles();
       updateVehicleCount(data);
@@ -144,20 +176,19 @@
           coords[0] += e.lngLat.lng > coords[0] ? 360 : -360;
         }
 
-        const html = `
-          <div>
-            <strong>${p.description}</strong><br/>
-            ${p.vehicle_type}<br/>
-            Speed: ${p.speed} km/h<br/>
-            Bearing: ${p.bearing}&deg;<br/>
-            Updated: ${formatTimestamp(p.timestamp)}
-          </div>
-        `;
+        // Remove old popup if any
+        if (activePopup) activePopup.remove();
 
-        new maplibregl.Popup({ offset: 12 })
+        activeVehicleId = p.vehicle_id;
+        activePopup = new maplibregl.Popup({ offset: 12 })
           .setLngLat(coords)
-          .setHTML(html)
+          .setHTML(buildPopupHtml(p))
           .addTo(map);
+
+        activePopup.on('close', () => {
+          activePopup = null;
+          activeVehicleId = null;
+        });
       });
 
       // Auto-refresh
@@ -166,6 +197,7 @@
           const freshData = await fetchVehicles();
           map.getSource('vehicles').setData(freshData);
           updateVehicleCount(freshData);
+          updatePopupFromData(freshData);
         } catch (err) {
           console.error('Failed to refresh vehicles:', err);
         }
