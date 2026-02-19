@@ -127,6 +127,31 @@
       font-size: 12px;
       display: none;
     }
+    #coverage-view-toggle {
+      display: flex;
+      margin: 6px 0;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    #coverage-view-toggle button {
+      flex: 1;
+      padding: 4px 0;
+      border: none;
+      background: transparent;
+      color: #9ca3af;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    #coverage-view-toggle button.active {
+      background: rgba(96, 165, 250, 0.25);
+      color: #f9fafb;
+    }
+    #coverage-view-toggle button:hover:not(.active) {
+      background: rgba(255,255,255,0.05);
+    }
   </style>
 </head>
 <body>
@@ -148,6 +173,10 @@
       <div class="detail-row" id="detail-updated"></div>
     </div>
     <div id="coverage-panel">
+      <div id="coverage-view-toggle">
+        <button id="btn-lines" class="active">Lines</button>
+        <button id="btn-heatmap">Heatmap</button>
+      </div>
       <label>Up to:</label>
       <span id="slider-label"></span>
       <input type="range" id="time-slider" min="0" max="1000" value="1000" />
@@ -219,6 +248,21 @@
     const timeSlider = document.getElementById('time-slider');
     const sliderLabel = document.getElementById('slider-label');
     const coverageLoading = document.getElementById('coverage-loading');
+
+    let coverageView = 'lines'; // 'lines' or 'heatmap'
+    const btnLines = document.getElementById('btn-lines');
+    const btnHeatmap = document.getElementById('btn-heatmap');
+
+    btnLines.addEventListener('click', () => switchCoverageView('lines'));
+    btnHeatmap.addEventListener('click', () => switchCoverageView('heatmap'));
+
+    function switchCoverageView(view) {
+      if (view === coverageView) return;
+      coverageView = view;
+      btnLines.classList.toggle('active', view === 'lines');
+      btnHeatmap.classList.toggle('active', view === 'heatmap');
+      renderCoverage(parseInt(timeSlider.value));
+    }
 
     document.getElementById('detail-close').addEventListener('click', () => {
       closeDetail();
@@ -426,6 +470,9 @@
     async function enterCoverage() {
       stopAutoRefresh();
       closeDetail();
+      coverageView = 'lines';
+      btnLines.classList.add('active');
+      btnHeatmap.classList.remove('active');
       if (map.getLayer('vehicle-circles')) {
         map.setLayoutProperty('vehicle-circles', 'visibility', 'none');
       }
@@ -454,9 +501,15 @@
       renderCoverage(parseInt(e.target.value));
     });
 
+    function clearHeatmapLayer() {
+      if (map.getLayer('coverage-heatmap')) map.removeLayer('coverage-heatmap');
+      if (map.getSource('coverage-heatmap')) map.removeSource('coverage-heatmap');
+    }
+
     function clearCoverageLayers() {
       if (map.getLayer('coverage-lines')) map.removeLayer('coverage-lines');
       if (map.getSource('coverage-lines')) map.removeSource('coverage-lines');
+      clearHeatmapLayer();
     }
 
     function renderCoverage(sliderVal) {
@@ -464,6 +517,28 @@
       const cutoff = sliderToTime(sliderVal);
       sliderLabel.textContent = formatTimestamp(cutoff.toISOString());
 
+      if (coverageView === 'lines') {
+        // Hide heatmap if visible
+        if (map.getLayer('coverage-heatmap')) {
+          map.setLayoutProperty('coverage-heatmap', 'visibility', 'none');
+        }
+        renderCoverageLines(sliderVal, cutoff);
+        if (map.getLayer('coverage-lines')) {
+          map.setLayoutProperty('coverage-lines', 'visibility', 'visible');
+        }
+      } else {
+        // Hide lines if visible
+        if (map.getLayer('coverage-lines')) {
+          map.setLayoutProperty('coverage-lines', 'visibility', 'none');
+        }
+        renderHeatmap(sliderVal);
+        if (map.getLayer('coverage-heatmap')) {
+          map.setLayoutProperty('coverage-heatmap', 'visibility', 'visible');
+        }
+      }
+    }
+
+    function renderCoverageLines(sliderVal, cutoff) {
       const sinceMs = coverageSince.getTime();
       const rangeMs = cutoff.getTime() - sinceMs;
 
@@ -506,6 +581,55 @@
             'line-color': ['get', 'seg_color'],
             'line-width': 3,
             'line-opacity': ['get', 'seg_opacity'],
+          },
+        });
+      }
+    }
+
+    function renderHeatmap(sliderVal) {
+      if (!coverageData) return;
+      const cutoff = sliderToTime(sliderVal);
+
+      // Extract all coordinates within the time cutoff as Point features
+      const pointFeatures = [];
+      for (const feature of coverageData.features) {
+        const coords = feature.geometry.coordinates;
+        const timestamps = feature.properties.timestamps;
+        for (let i = 0; i < coords.length; i++) {
+          const tMs = new Date(timestamps[i]).getTime();
+          if (tMs > cutoff.getTime()) break;
+          pointFeatures.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: coords[i] },
+            properties: {},
+          });
+        }
+      }
+
+      const data = { type: 'FeatureCollection', features: pointFeatures };
+      const source = map.getSource('coverage-heatmap');
+      if (source) {
+        source.setData(data);
+      } else {
+        map.addSource('coverage-heatmap', { type: 'geojson', data });
+        map.addLayer({
+          id: 'coverage-heatmap',
+          type: 'heatmap',
+          source: 'coverage-heatmap',
+          paint: {
+            'heatmap-weight': 1,
+            'heatmap-intensity': 1.5,
+            'heatmap-radius': 15,
+            'heatmap-opacity': 0.7,
+            'heatmap-color': [
+              'interpolate', ['linear'], ['heatmap-density'],
+              0, 'rgba(0,0,0,0)',
+              0.2, '#2563eb',
+              0.4, '#60a5fa',
+              0.6, '#fbbf24',
+              0.8, '#f97316',
+              1.0, '#ef4444',
+            ],
           },
         });
       }
