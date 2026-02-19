@@ -52,12 +52,61 @@ On insert, populate `geom` via `ST_Point(longitude, latitude)`.
 
 All geo endpoints return GeoJSON FeatureCollections. The API is served by the existing FastAPI app.
 
+### Pagination
+
+All list endpoints use **cursor-based pagination** using timestamps. This provides stable pagination even as new data arrives.
+
+**Pagination parameters (shared across list endpoints):**
+
+| Param | Type | Default | Max | Description |
+|---|---|---|---|---|
+| `limit` | int | 200 | 2000 | Number of features per page |
+| `after` | datetime | — | — | Cursor: return features after this timestamp |
+
+**Response envelope:**
+
+Every paginated GeoJSON response includes pagination metadata alongside the standard FeatureCollection:
+
+```json
+{
+  "type": "FeatureCollection",
+  "features": [...],
+  "pagination": {
+    "limit": 200,
+    "count": 200,
+    "next_cursor": "2026-02-19T12:53:14.000Z",
+    "has_more": true
+  }
+}
+```
+
+Consumers follow `next_cursor` to fetch subsequent pages:
+```
+GET /coverage?since=2026-02-19T00:00:00Z&after=2026-02-19T12:53:14.000Z&limit=200
+```
+
+Note: `/vehicles` returns at most one position per vehicle (latest), so it's unlikely to paginate, but supports it for consistency.
+
+### OpenAPI Annotations
+
+All routes use Pydantic response models and FastAPI annotations to generate a correct OpenAPI spec:
+
+- Every route has `summary`, `description`, and `tags`
+- Query parameters use `Query()` with descriptions, examples, `ge`/`le` constraints
+- Response models defined as Pydantic classes (GeoJSON Feature, FeatureCollection, Pagination)
+- The auto-generated spec is available at `GET /openapi.json` and `GET /docs` (Swagger UI)
+- The frontend links to `/docs` so users can discover the API
+
 ### GET /vehicles
 
 Current position of every vehicle.
 
 ```
-Response: GeoJSON FeatureCollection
+Query params:
+  limit  (optional, default 200, max 2000)
+  after  (optional) — cursor timestamp
+
+Response: GeoJSON FeatureCollection with pagination
 ```
 
 Each feature:
@@ -85,11 +134,13 @@ Vehicles within a radius of a point.
 
 ```
 Query params:
-  lat    (required) — latitude
-  lng    (required) — longitude
-  radius (optional, default 500) — radius in meters
+  lat    (required) — latitude, example: 47.56
+  lng    (required) — longitude, example: -52.73
+  radius (optional, default 500) — radius in meters, max 5000
+  limit  (optional, default 200, max 2000)
+  after  (optional) — cursor timestamp
 
-Response: GeoJSON FeatureCollection (same feature shape as /vehicles)
+Response: GeoJSON FeatureCollection with pagination (same feature shape as /vehicles)
 ```
 
 SQL approach: Same as `/vehicles` but filtered with `ST_DWithin()`. Radius in meters converted to approximate degrees at St. John's latitude (~1m ≈ 0.000009 degrees).
@@ -99,11 +150,16 @@ SQL approach: Same as `/vehicles` but filtered with `ST_DWithin()`. Radius in me
 Position history for one vehicle.
 
 ```
-Query params:
-  since (optional, default 4 hours ago) — ISO 8601 datetime
-  until (optional, default now)         — ISO 8601 datetime
+Path params:
+  id (required) — vehicle ID
 
-Response: GeoJSON FeatureCollection of Point features, ordered by timestamp
+Query params:
+  since  (optional, default 4 hours ago) — ISO 8601 datetime
+  until  (optional, default now)         — ISO 8601 datetime
+  limit  (optional, default 200, max 2000)
+  after  (optional) — cursor timestamp
+
+Response: GeoJSON FeatureCollection of Point features with pagination, ordered by timestamp
 ```
 
 Each feature's properties include `timestamp`, `speed`, `bearing`, `is_driving`.
@@ -114,15 +170,17 @@ All positions in a time window. For heatmap visualization.
 
 ```
 Query params:
-  since (optional, default 4 hours ago) — ISO 8601 datetime
-  until (optional, default now)         — ISO 8601 datetime
+  since  (optional, default 4 hours ago) — ISO 8601 datetime
+  until  (optional, default now)         — ISO 8601 datetime
+  limit  (optional, default 200, max 2000)
+  after  (optional) — cursor timestamp
 
-Response: GeoJSON FeatureCollection of all position points
+Response: GeoJSON FeatureCollection of all position points with pagination
 ```
 
 ### GET /stats
 
-Collection statistics (plain JSON, not GeoJSON).
+Collection statistics (plain JSON, not GeoJSON). Not paginated.
 
 ```json
 {
@@ -158,6 +216,7 @@ A single HTML page served at `GET /`. No build step, no bundling.
 - Marker rotation from `bearing` property
 - Auto-refresh every 6 seconds via `source.setData()`
 - Click marker → popup with vehicle description, speed, last update time
+- Link to `/docs` (Swagger UI) in the page footer/corner so users can discover the API and OpenAPI spec
 
 ### Refresh Loop
 
@@ -181,10 +240,11 @@ https://tiles.openfreemap.org/styles/liberty
 ```
 src/where_the_plow/
 ├── main.py           # Add new routes + static file serving
-├── routes.py         # New — API endpoint handlers
+├── models.py         # New — Pydantic models for GeoJSON, pagination, stats (OpenAPI schema)
+├── routes.py         # New — API endpoint handlers with OpenAPI annotations
 ├── db.py             # Update — spatial extension, geom column, new query methods
 ├── static/
-│   └── index.html    # New — MapLibre frontend
+│   └── index.html    # New — MapLibre frontend (links to /docs for API spec)
 ├── collector.py      # Update — insert geom on position writes
 ├── client.py         # Unchanged
 └── config.py         # Unchanged
@@ -194,10 +254,12 @@ src/where_the_plow/
 
 1. DuckDB spatial extension + schema migration (add geom column)
 2. Update collector to populate geom on insert
-3. Add query methods to db.py (latest positions, nearby, history, coverage)
-4. Add API routes (routes.py + wire into main.py)
-5. Build the MapLibre frontend (static/index.html)
-6. Update Dockerfile (ensure spatial extension available in container)
+3. Add Pydantic response models (models.py — GeoJSON types, pagination, stats)
+4. Add query methods to db.py (latest positions, nearby, history, coverage)
+5. Add API routes (routes.py + wire into main.py) with full OpenAPI annotations
+6. Build the MapLibre frontend (static/index.html) with link to /docs
+7. Update Dockerfile (ensure spatial extension available in container)
+8. Review OpenAPI spec — verify all endpoints are well-documented, types correct, examples present
 
 ## Migration Strategy
 
