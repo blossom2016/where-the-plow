@@ -131,6 +131,22 @@
       font-size: 12px;
       display: none;
     }
+    #panel-footer {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      font-size: 11px;
+      color: #6b7280;
+      line-height: 1.6;
+    }
+    #panel-footer a {
+      color: #9ca3af;
+      text-decoration: none;
+    }
+    #panel-footer a:hover {
+      color: #e5e7eb;
+      text-decoration: underline;
+    }
     #coverage-view-toggle {
       display: flex;
       margin: 6px 0;
@@ -186,6 +202,10 @@
       <span id="slider-label"></span>
       <input type="range" id="time-slider" min="0" max="1000" value="1000" />
       <div id="coverage-loading">Loading coverage data...</div>
+    </div>
+    <div id="panel-footer">
+      Data from <a href="https://map.stjohns.ca/avl/" target="_blank" rel="noopener">City of St. John's AVL</a><br>
+      <a href="https://github.com/jackharrhy/where-the-plow" target="_blank" rel="noopener">View on GitHub</a>
     </div>
   </div>
   <script>
