@@ -372,3 +372,118 @@ def test_get_coverage():
 
     db.close()
     os.unlink(path)
+
+
+def test_get_coverage_trails():
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+    ts1 = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts2 = datetime(2026, 2, 19, 12, 0, 30, tzinfo=timezone.utc)
+    ts3 = datetime(2026, 2, 19, 12, 1, 0, tzinfo=timezone.utc)
+
+    db.upsert_vehicles(
+        [
+            {
+                "vehicle_id": "v1",
+                "description": "Plow 1",
+                "vehicle_type": "TA PLOW TRUCK",
+            },
+            {"vehicle_id": "v2", "description": "Plow 2", "vehicle_type": "LOADER"},
+        ],
+        now,
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts1,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts2,
+                "longitude": -52.74,
+                "latitude": 47.57,
+                "bearing": 90,
+                "speed": 15.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts3,
+                "longitude": -52.75,
+                "latitude": 47.58,
+                "bearing": 180,
+                "speed": 20.0,
+                "is_driving": "maybe",
+            },
+            # v2 has only one position — should be excluded (no trail)
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts1,
+                "longitude": -52.80,
+                "latitude": 47.50,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "no",
+            },
+        ],
+        now,
+    )
+
+    trails = db.get_coverage_trails(since=ts1, until=ts3)
+    assert len(trails) == 1  # only v1 has a trail
+    trail = trails[0]
+    assert trail["vehicle_id"] == "v1"
+    assert trail["vehicle_type"] == "TA PLOW TRUCK"
+    assert trail["description"] == "Plow 1"
+    assert len(trail["coordinates"]) == 3
+    assert len(trail["timestamps"]) == 3
+    assert trail["coordinates"][0] == [-52.73, 47.56]
+    assert trail["timestamps"][0] <= trail["timestamps"][1]
+
+    db.close()
+    os.unlink(path)
+
+
+def test_get_coverage_trails_downsampling():
+    """Positions closer than 30s apart should be downsampled."""
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+
+    db.upsert_vehicles(
+        [{"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"}],
+        now,
+    )
+    # Insert 10 positions 6s apart (total 54s span)
+    positions = []
+    for i in range(10):
+        ts = datetime(2026, 2, 19, 12, 0, i * 6, tzinfo=timezone.utc)
+        positions.append(
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts,
+                "longitude": -52.73 + i * 0.001,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            }
+        )
+    db.insert_positions(positions, now)
+
+    since = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    until = datetime(2026, 2, 19, 12, 0, 54, tzinfo=timezone.utc)
+    trails = db.get_coverage_trails(since=since, until=until)
+    assert len(trails) == 1
+    # With 30s downsampling: keep t=0, skip t=6..24, keep t=30, skip t=36..48, keep t=54
+    # Should have ~3 points, not 10
+    assert len(trails[0]["coordinates"]) < 10
+    assert len(trails[0]["coordinates"]) >= 2
+
+    db.close()
+    os.unlink(path)

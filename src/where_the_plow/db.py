@@ -1,6 +1,8 @@
 # src/where_the_plow/db.py
 import duckdb
 from datetime import datetime
+from itertools import groupby
+from operator import itemgetter
 
 
 class Database:
@@ -202,6 +204,58 @@ class Database:
         """
         rows = self.conn.execute(query, [since, until, after, limit]).fetchall()
         return [self._row_to_dict(r) for r in rows]
+
+    def get_coverage_trails(
+        self,
+        since: datetime,
+        until: datetime,
+        min_interval_s: float = 30.0,
+    ) -> list[dict]:
+        """Get per-vehicle LineString trails in a time range, downsampled."""
+        query = """
+            SELECT p.vehicle_id, p.timestamp, p.longitude, p.latitude,
+                   v.description, v.vehicle_type
+            FROM positions p
+            JOIN vehicles v ON p.vehicle_id = v.vehicle_id
+            WHERE p.timestamp >= $1
+            AND p.timestamp <= $2
+            ORDER BY p.vehicle_id, p.timestamp ASC
+        """
+        rows = self.conn.execute(query, [since, until]).fetchall()
+
+        trails = []
+        for vid, group in groupby(rows, key=itemgetter(0)):
+            points = list(group)
+            if len(points) < 2:
+                continue
+
+            # Downsample: keep first point, then skip until >= min_interval_s
+            sampled = [points[0]]
+            for pt in points[1:]:
+                elapsed = (pt[1] - sampled[-1][1]).total_seconds()
+                if elapsed >= min_interval_s:
+                    sampled.append(pt)
+            # Always include the last point
+            if sampled[-1] != points[-1]:
+                sampled.append(points[-1])
+
+            if len(sampled) < 2:
+                continue
+
+            trails.append(
+                {
+                    "vehicle_id": vid,
+                    "description": sampled[0][4],
+                    "vehicle_type": sampled[0][5],
+                    "coordinates": [[p[2], p[3]] for p in sampled],
+                    "timestamps": [
+                        p[1].isoformat() if isinstance(p[1], datetime) else str(p[1])
+                        for p in sampled
+                    ],
+                }
+            )
+
+        return trails
 
     def _row_to_dict(self, row) -> dict:
         return {
