@@ -133,3 +133,242 @@ def test_get_stats_empty():
     assert stats["total_vehicles"] == 0
     db.close()
     os.unlink(path)
+
+
+def test_get_latest_positions():
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+    ts1 = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts2 = datetime(2026, 2, 19, 12, 0, 6, tzinfo=timezone.utc)
+
+    db.upsert_vehicles(
+        [
+            {"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"},
+            {
+                "vehicle_id": "v2",
+                "description": "Plow 2",
+                "vehicle_type": "SA PLOW TRUCK",
+            },
+        ],
+        now,
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts1,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts2,
+                "longitude": -52.74,
+                "latitude": 47.57,
+                "bearing": 90,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts1,
+                "longitude": -52.80,
+                "latitude": 47.50,
+                "bearing": 180,
+                "speed": 5.0,
+                "is_driving": "no",
+            },
+        ],
+        now,
+    )
+
+    features = db.get_latest_positions(limit=200)
+    assert len(features) == 2
+    v1 = next(f for f in features if f["vehicle_id"] == "v1")
+    assert abs(v1["longitude"] - (-52.74)) < 0.001
+
+    db.close()
+    os.unlink(path)
+
+
+def test_get_latest_positions_pagination():
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    db.upsert_vehicles(
+        [
+            {"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"},
+            {"vehicle_id": "v2", "description": "Plow 2", "vehicle_type": "LOADER"},
+        ],
+        now,
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts,
+                "longitude": -52.80,
+                "latitude": 47.50,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            },
+        ],
+        now,
+    )
+
+    page1 = db.get_latest_positions(limit=1)
+    assert len(page1) == 1
+
+    db.close()
+    os.unlink(path)
+
+
+def test_get_nearby_vehicles():
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+    ts = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    db.upsert_vehicles(
+        [
+            {"vehicle_id": "v1", "description": "Near", "vehicle_type": "LOADER"},
+            {"vehicle_id": "v2", "description": "Far", "vehicle_type": "LOADER"},
+        ],
+        now,
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts,
+                "longitude": -53.00,
+                "latitude": 47.00,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            },
+        ],
+        now,
+    )
+
+    results = db.get_nearby_vehicles(lat=47.56, lng=-52.73, radius_m=1000, limit=200)
+    assert len(results) == 1
+    assert results[0]["vehicle_id"] == "v1"
+
+    db.close()
+    os.unlink(path)
+
+
+def test_get_vehicle_history():
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+    ts1 = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts2 = datetime(2026, 2, 19, 12, 0, 6, tzinfo=timezone.utc)
+    ts3 = datetime(2026, 2, 19, 12, 0, 12, tzinfo=timezone.utc)
+
+    db.upsert_vehicles(
+        [{"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"}], now
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts1,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts2,
+                "longitude": -52.74,
+                "latitude": 47.57,
+                "bearing": 90,
+                "speed": 5.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts3,
+                "longitude": -52.75,
+                "latitude": 47.58,
+                "bearing": 180,
+                "speed": 10.0,
+                "is_driving": "maybe",
+            },
+        ],
+        now,
+    )
+
+    history = db.get_vehicle_history("v1", since=ts1, until=ts3, limit=200)
+    assert len(history) == 3
+    assert history[0]["timestamp"] <= history[1]["timestamp"]
+
+    db.close()
+    os.unlink(path)
+
+
+def test_get_coverage():
+    db, path = make_db()
+    now = datetime.now(timezone.utc)
+    ts1 = datetime(2026, 2, 19, 12, 0, 0, tzinfo=timezone.utc)
+    ts2 = datetime(2026, 2, 19, 12, 0, 6, tzinfo=timezone.utc)
+
+    db.upsert_vehicles(
+        [
+            {"vehicle_id": "v1", "description": "Plow 1", "vehicle_type": "LOADER"},
+            {"vehicle_id": "v2", "description": "Plow 2", "vehicle_type": "LOADER"},
+        ],
+        now,
+    )
+    db.insert_positions(
+        [
+            {
+                "vehicle_id": "v1",
+                "timestamp": ts1,
+                "longitude": -52.73,
+                "latitude": 47.56,
+                "bearing": 0,
+                "speed": 0.0,
+                "is_driving": "maybe",
+            },
+            {
+                "vehicle_id": "v2",
+                "timestamp": ts2,
+                "longitude": -52.80,
+                "latitude": 47.50,
+                "bearing": 0,
+                "speed": 5.0,
+                "is_driving": "maybe",
+            },
+        ],
+        now,
+    )
+
+    coverage = db.get_coverage(since=ts1, until=ts2, limit=200)
+    assert len(coverage) == 2
+
+    db.close()
+    os.unlink(path)
