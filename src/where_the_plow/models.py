@@ -88,3 +88,4 @@ class StatsResponse(BaseModel):
     )
     earliest: str | None = Field(None, description="Earliest position timestamp")
     latest: str | None = Field(None, description="Latest position timestamp")
+    db_size_bytes: int | None = Field(None, description="Database file size in bytes")

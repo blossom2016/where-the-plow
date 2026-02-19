@@ -192,6 +192,8 @@ def test_get_stats_empty():
     stats = db.get_stats()
     assert stats["total_positions"] == 0
     assert stats["total_vehicles"] == 0
+    assert stats["db_size_bytes"] is not None
+    assert stats["db_size_bytes"] > 0
     db.close()
     os.unlink(path)
 

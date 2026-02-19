@@ -50,6 +50,10 @@
       font-size: 12px;
       margin-top: 6px;
     }
+    #db-size {
+      color: #9ca3af;
+      font-size: 12px;
+    }
     #vehicle-detail {
       margin-top: 10px;
       padding-top: 10px;
@@ -164,6 +168,7 @@
       <button id="btn-coverage">Coverage</button>
     </div>
     <div id="vehicle-count">Loading vehicles...</div>
+    <div id="db-size"></div>
     <div id="vehicle-detail">
       <span class="detail-close" id="detail-close">&times;</span>
       <div class="detail-name" id="detail-name"></div>
@@ -214,10 +219,24 @@
       return VEHICLE_COLORS[type] || DEFAULT_COLOR;
     }
 
+    function formatBytes(bytes) {
+      if (bytes === null || bytes === undefined) return '';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    }
+
     function updateVehicleCount(data) {
       const count = data.features ? data.features.length : 0;
       document.getElementById('vehicle-count').textContent =
         count + ' vehicle' + (count !== 1 ? 's' : '') + ' tracked';
+      fetch('/stats').then(r => r.json()).then(stats => {
+        if (stats.db_size_bytes) {
+          document.getElementById('db-size').textContent =
+            formatBytes(stats.db_size_bytes) + ' of data';
+        }
+      }).catch(() => {});
     }
 
     async function fetchVehicles() {
@@ -464,6 +483,7 @@
         map.setLayoutProperty('vehicle-circles', 'visibility', 'visible');
       }
       document.getElementById('vehicle-count').style.display = '';
+      document.getElementById('db-size').style.display = '';
       startAutoRefresh();
     }
 
@@ -477,6 +497,7 @@
         map.setLayoutProperty('vehicle-circles', 'visibility', 'none');
       }
       document.getElementById('vehicle-count').style.display = 'none';
+      document.getElementById('db-size').style.display = 'none';
       coveragePanelEl.style.display = 'block';
       coverageLoading.style.display = 'block';
       timeSlider.value = 1000;

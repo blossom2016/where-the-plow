@@ -1,4 +1,6 @@
 # src/where_the_plow/db.py
+import os
+
 import duckdb
 from datetime import datetime
 from itertools import groupby
@@ -301,10 +303,15 @@ class Database:
         active_vehicles = self.conn.execute(
             "SELECT count(DISTINCT vehicle_id) FROM positions WHERE is_driving = 'maybe'"
         ).fetchone()[0]
+        try:
+            db_size_bytes = os.path.getsize(self.path)
+        except OSError:
+            db_size_bytes = None
         result = {
             "total_positions": total_positions,
             "total_vehicles": total_vehicles,
             "active_vehicles": active_vehicles,
+            "db_size_bytes": db_size_bytes,
         }
         if total_positions > 0:
             row = self.conn.execute(

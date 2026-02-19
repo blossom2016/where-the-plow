@@ -177,6 +177,9 @@ def test_get_stats(test_client):
     data = resp.json()
     assert data["total_positions"] == 4
     assert data["total_vehicles"] == 2
+    assert "db_size_bytes" in data
+    assert data["db_size_bytes"] is not None
+    assert data["db_size_bytes"] > 0
 
 
 def test_openapi_spec(test_client):

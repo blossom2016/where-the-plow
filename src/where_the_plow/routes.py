@@ -202,4 +202,5 @@ def get_stats(request: Request):
         active_vehicles=stats.get("active_vehicles", 0),
         earliest=earliest.isoformat() if earliest else None,
         latest=latest.isoformat() if latest else None,
+        db_size_bytes=stats.get("db_size_bytes"),
     )
