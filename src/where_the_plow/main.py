@@ -42,7 +42,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Where the Plow",
     description="Real-time and historical plow tracker for the City of St. John's. "
-    "All geo endpoints return GeoJSON FeatureCollections with cursor-based pagination.",
+    "All geo endpoints return GeoJSON FeatureCollections with cursor-based pagination.\n\n"
+    "**WARNING:** This API is not stable. Monitor the `openapi.json` file for breaking changes. "
+    "Version 0.1.0 will remain until the API can be considered stable — and even then, "
+    "it likely won't hit stable unless someone asks nicely. If you would like a stable API, "
+    "shoot [jackharrhy.dev](https://jackharrhy.dev) an email.",
     version="0.1.0",
     lifespan=lifespan,
 )

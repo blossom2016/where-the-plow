@@ -201,6 +201,12 @@ body {
     font-size: 12px;
 }
 
+.coverage-hint {
+    color: var(--color-text-muted);
+    font-size: 11px;
+    margin: 6px 0 2px;
+}
+
 #date-picker-row {
     display: none;
     margin: 6px 0;
@@ -231,16 +237,47 @@ body {
 }
 
 #time-slider {
-    width: 100%;
-    margin: 6px 0;
-    accent-color: var(--color-accent);
+    margin: 10px 0 6px;
+}
+
+#time-slider .noUi-target {
+    background: var(--color-input-bg);
+    border: none;
+    box-shadow: none;
+    height: 6px;
+    border-radius: 3px;
+}
+
+#time-slider .noUi-connect {
+    background: var(--color-accent);
+}
+
+#time-slider .noUi-handle {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--color-text-bright);
+    border: 2px solid var(--color-accent);
+    box-shadow: none;
+    top: -5px;
+    right: -7px;
+    cursor: grab;
+}
+
+#time-slider .noUi-handle:active {
+    cursor: grabbing;
+}
+
+#time-slider .noUi-handle::before,
+#time-slider .noUi-handle::after {
+    display: none;
 }
 
 #slider-label {
-    color: var(--color-text-bright);
-    font-size: 12px;
-    text-align: center;
-    display: block;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
 }
 
 #coverage-loading {
@@ -334,6 +371,13 @@ body {
     font-size: 0.78rem;
     color: var(--color-text);
     margin-bottom: 4px;
+    cursor: pointer;
+}
+
+.legend-check {
+    margin-left: auto;
+    accent-color: var(--color-accent);
+    cursor: pointer;
 }
 
 .legend-swatch {

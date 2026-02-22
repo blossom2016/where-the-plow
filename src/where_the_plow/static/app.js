@@ -302,6 +302,22 @@ class PlowMap {
             this.map.removeSource("coverage-heatmap");
     }
 
+    /* ── Type filtering ─────────────────────────────── */
+
+    setTypeFilter(filter) {
+        const layerIds = [
+            "vehicle-outline", "vehicle-circles",
+            "mini-trails",
+            "coverage-lines", "coverage-heatmap",
+            "vehicle-trail-dots", "vehicle-trail-line",
+        ];
+        for (const id of layerIds) {
+            if (this.map.getLayer(id)) {
+                this.map.setFilter(id, filter);
+            }
+        }
+    }
+
     /* ── Abort management ───────────────────────────── */
 
     abortCoverage() {
@@ -390,6 +406,7 @@ const VEHICLE_COLORS = {
     GRADER: "#16a34a",
 };
 const DEFAULT_COLOR = "#6b7280";
+const KNOWN_TYPES = ["SA PLOW TRUCK", "TA PLOW TRUCK", "LOADER", "GRADER"];
 
 function vehicleColor(type) {
     return VEHICLE_COLORS[type] || DEFAULT_COLOR;
@@ -410,7 +427,7 @@ function buildMiniTrails(data) {
                     type: "LineString",
                     coordinates: [trail[i], trail[i + 1]],
                 },
-                properties: { color, opacity },
+                properties: { color, opacity, vehicle_type: f.properties.vehicle_type },
             });
         }
     }
@@ -523,6 +540,7 @@ function buildTrailSegments(features) {
             properties: {
                 seg_opacity: features[i].properties.trail_opacity,
                 seg_color: features[i].properties.trail_color,
+                vehicle_type: features[i].properties.vehicle_type,
             },
         });
     }
@@ -534,8 +552,16 @@ function buildTrailSegments(features) {
 const btnRealtime = document.getElementById("btn-realtime");
 const btnCoverage = document.getElementById("btn-coverage");
 const coveragePanelEl = document.getElementById("coverage-panel");
-const timeSlider = document.getElementById("time-slider");
+const timeSliderEl = document.getElementById("time-slider");
 const sliderLabel = document.getElementById("slider-label");
+
+// Initialize noUiSlider with dual handles (0-1000 internal range)
+noUiSlider.create(timeSliderEl, {
+    start: [0, 1000],
+    connect: true,
+    range: { min: 0, max: 1000 },
+    step: 1,
+});
 const coverageLoading = document.getElementById("coverage-loading");
 const coverageRangeLabel = document.getElementById("coverage-range-label");
 const datePickerRow = document.getElementById("date-picker-row");
@@ -565,8 +591,8 @@ function setPresetActive(value) {
 }
 
 function showLegend(type) {
-    document.getElementById("legend-vehicles").style.display =
-        type === "vehicles" ? "" : "none";
+    // Vehicle legend (with type checkboxes) is always visible
+    document.getElementById("legend-vehicles").style.display = "";
     document.getElementById("legend-heatmap").style.display =
         type === "heatmap" ? "" : "none";
 }
@@ -614,6 +640,45 @@ class PlowApp {
         this.coverageUntil = null;
         this.coveragePreset = "24";
         this.coverageView = "lines";
+    }
+
+    /* ── Type filtering ─────────────────────────────── */
+
+    buildTypeFilter() {
+        const checked = [];
+        let otherChecked = false;
+        for (const row of document.querySelectorAll("#legend-vehicles .legend-row")) {
+            const cb = row.querySelector(".legend-check");
+            if (!cb.checked) continue;
+            const types = row.dataset.types;
+            if (types === "__OTHER__") {
+                otherChecked = true;
+            } else {
+                checked.push(...types.split(","));
+            }
+        }
+
+        // If everything is checked, no filter needed
+        if (checked.length === KNOWN_TYPES.length && otherChecked) {
+            return null;
+        }
+
+        // Build a filter: include checked known types + "other" (not in KNOWN_TYPES)
+        const parts = [];
+        if (checked.length > 0) {
+            parts.push(["in", ["get", "vehicle_type"], ["literal", checked]]);
+        }
+        if (otherChecked) {
+            parts.push(["!", ["in", ["get", "vehicle_type"], ["literal", KNOWN_TYPES]]]);
+        }
+
+        if (parts.length === 0) return false; // nothing visible
+        if (parts.length === 1) return parts[0];
+        return ["any", ...parts];
+    }
+
+    applyTypeFilters() {
+        this.map.setTypeFilter(this.buildTypeFilter());
     }
 
     /* ── Mode switching ────────────────────────────── */
@@ -674,7 +739,7 @@ class PlowApp {
         this.coverageUntil = until;
         this.updateRangeLabel();
         coverageLoading.style.display = "block";
-        timeSlider.value = 1000;
+        timeSliderEl.noUiSlider.set([0, 1000]);
         this.map.clearCoverage();
         try {
             const resp = await fetch(
@@ -687,7 +752,8 @@ class PlowApp {
             throw err;
         }
         coverageLoading.style.display = "none";
-        this.renderCoverage(1000);
+        this.renderCoverage(0, 1000);
+        this.applyTypeFilters();
     }
 
     async loadCoverageForDate(dateStr) {
@@ -703,28 +769,33 @@ class PlowApp {
         btnLines.classList.toggle("active", view === "lines");
         btnHeatmap.classList.toggle("active", view === "heatmap");
         showLegend(view === "heatmap" ? "heatmap" : "vehicles");
-        this.renderCoverage(parseInt(timeSlider.value));
+        const vals = timeSliderEl.noUiSlider.get().map(Number);
+        this.renderCoverage(vals[0], vals[1]);
+        this.applyTypeFilters();
     }
 
-    renderCoverage(sliderVal) {
+    renderCoverage(fromVal, toVal) {
         if (!this.coverageData || this.mode !== "coverage") return;
-        const cutoff = this.sliderToTime(sliderVal);
-        sliderLabel.textContent = formatTimestamp(cutoff.toISOString());
+        const fromTime = this.sliderToTime(fromVal);
+        const toTime = this.sliderToTime(toVal);
+        sliderLabel.innerHTML =
+            "<span>" + formatTimestamp(fromTime.toISOString()) + "</span>" +
+            "<span>" + formatTimestamp(toTime.toISOString()) + "</span>";
 
         if (this.coverageView === "lines") {
             this.map.setHeatmapVisibility(false);
-            this.renderCoverageLines(sliderVal, cutoff);
+            this.renderCoverageLines(fromTime, toTime);
             this.map.setCoverageLineVisibility(true);
         } else {
             this.map.setCoverageLineVisibility(false);
-            this.renderHeatmap(sliderVal);
+            this.renderHeatmap(fromTime, toTime);
             this.map.setHeatmapVisibility(true);
         }
     }
 
-    renderCoverageLines(sliderVal, cutoff) {
-        const sinceMs = this.coverageSince.getTime();
-        const rangeMs = cutoff.getTime() - sinceMs;
+    renderCoverageLines(fromTime, toTime) {
+        const fromMs = fromTime.getTime();
+        const rangeMs = toTime.getTime() - fromMs;
 
         const segmentFeatures = [];
         for (const feature of this.coverageData.features) {
@@ -735,9 +806,10 @@ class PlowApp {
             for (let i = 0; i < coords.length - 1; i++) {
                 const tMs = new Date(timestamps[i]).getTime();
                 const tNextMs = new Date(timestamps[i + 1]).getTime();
-                if (tNextMs > cutoff.getTime()) break;
+                if (tMs < fromMs) continue;
+                if (tNextMs > toTime.getTime()) break;
 
-                const progress = rangeMs > 0 ? (tMs - sinceMs) / rangeMs : 1;
+                const progress = rangeMs > 0 ? (tMs - fromMs) / rangeMs : 1;
                 const opacity = 0.15 + progress * 0.65;
 
                 segmentFeatures.push({
@@ -746,7 +818,7 @@ class PlowApp {
                         type: "LineString",
                         coordinates: [coords[i], coords[i + 1]],
                     },
-                    properties: { seg_opacity: opacity, seg_color: color },
+                    properties: { seg_opacity: opacity, seg_color: color, vehicle_type: feature.properties.vehicle_type },
                 });
             }
         }
@@ -755,9 +827,10 @@ class PlowApp {
         this.map.renderCoverageLines(data);
     }
 
-    renderHeatmap(sliderVal) {
+    renderHeatmap(fromTime, toTime) {
         if (!this.coverageData) return;
-        const cutoff = this.sliderToTime(sliderVal);
+        const fromMs = fromTime.getTime();
+        const toMs = toTime.getTime();
 
         const pointFeatures = [];
         for (const feature of this.coverageData.features) {
@@ -765,11 +838,12 @@ class PlowApp {
             const timestamps = feature.properties.timestamps;
             for (let i = 0; i < coords.length; i++) {
                 const tMs = new Date(timestamps[i]).getTime();
-                if (tMs > cutoff.getTime()) break;
+                if (tMs < fromMs) continue;
+                if (tMs > toMs) break;
                 pointFeatures.push({
                     type: "Feature",
                     geometry: { type: "Point", coordinates: coords[i] },
-                    properties: {},
+                    properties: { vehicle_type: feature.properties.vehicle_type },
                 });
             }
         }
@@ -864,6 +938,7 @@ class PlowApp {
         };
 
         this.map.showTrail(trailData, lineData);
+        this.applyTypeFilters();
     }
 
     async refreshTrail() {
@@ -920,8 +995,14 @@ btnLines.addEventListener("click", () => app.switchCoverageView("lines"));
 btnHeatmap.addEventListener("click", () => app.switchCoverageView("heatmap"));
 
 // Slider
-timeSlider.addEventListener("input", (e) => {
-    app.renderCoverage(parseInt(e.target.value));
+timeSliderEl.noUiSlider.on("update", () => {
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    app.renderCoverage(vals[0], vals[1]);
+});
+
+// Legend type checkboxes
+document.getElementById("legend-vehicles").addEventListener("change", () => {
+    app.applyTypeFilters();
 });
 
 // Detail close

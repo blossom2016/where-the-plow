@@ -20,8 +20,13 @@
             rel="stylesheet"
             href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css"
         />
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/nouislider@15/dist/nouislider.min.css"
+        />
         <link rel="stylesheet" href="/static/style.css" />
         <script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script>
+        <script src="https://unpkg.com/nouislider@15/dist/nouislider.min.js"></script>
     </head>
     <body>
         <div id="map"></div>
@@ -44,6 +49,7 @@
                 <div class="detail-row" id="detail-updated"></div>
             </div>
             <div id="coverage-panel">
+                <div class="coverage-hint">Load coverage data for a time window</div>
                 <div id="time-range-presets" class="toggle-group">
                     <button data-hours="6">6h</button>
                     <button data-hours="12">12h</button>
@@ -54,19 +60,14 @@
                     <input type="date" id="coverage-date" />
                 </div>
                 <div id="coverage-range-label"></div>
+                <div class="coverage-hint">View as route lines or activity heatmap</div>
                 <div id="coverage-view-toggle" class="toggle-group">
                     <button id="btn-lines" class="active">Lines</button>
                     <button id="btn-heatmap">Heatmap</button>
                 </div>
-                <label>Up to:</label>
+                <div class="coverage-hint">Drag the handles to narrow the visible time range</div>
                 <span id="slider-label"></span>
-                <input
-                    type="range"
-                    id="time-slider"
-                    min="0"
-                    max="1000"
-                    value="1000"
-                />
+                <div id="time-slider"></div>
                 <div id="coverage-loading">Loading coverage data...</div>
             </div>
             <div id="legend">
@@ -78,34 +79,38 @@
                 </div>
                 <div id="legend-body">
                     <div id="legend-vehicles">
-                        <div class="legend-row">
+                        <label class="legend-row" data-types="SA PLOW TRUCK,TA PLOW TRUCK">
                             <span
                                 class="legend-swatch"
                                 style="background: #2563eb"
                             ></span
                             >Plow truck
-                        </div>
-                        <div class="legend-row">
+                            <input type="checkbox" checked class="legend-check" />
+                        </label>
+                        <label class="legend-row" data-types="LOADER">
                             <span
                                 class="legend-swatch"
                                 style="background: #ea580c"
                             ></span
                             >Loader
-                        </div>
-                        <div class="legend-row">
+                            <input type="checkbox" checked class="legend-check" />
+                        </label>
+                        <label class="legend-row" data-types="GRADER">
                             <span
                                 class="legend-swatch"
                                 style="background: #16a34a"
                             ></span
                             >Grader
-                        </div>
-                        <div class="legend-row">
+                            <input type="checkbox" checked class="legend-check" />
+                        </label>
+                        <label class="legend-row" data-types="__OTHER__">
                             <span
                                 class="legend-swatch"
                                 style="background: #6b7280"
                             ></span
                             >Other
-                        </div>
+                            <input type="checkbox" checked class="legend-check" />
+                        </label>
                     </div>
                     <div id="legend-heatmap" style="display: none">
                         <div class="legend-gradient"></div>
