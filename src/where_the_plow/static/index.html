@@ -4,6 +4,19 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Where the Plow</title>
+        <script
+            async
+            src="https://www.googletagmanager.com/gtag/js?id=G-GWD53EX053"
+        ></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag() {
+                dataLayer.push(arguments);
+            }
+            gtag("js", new Date());
+
+            gtag("config", "G-GWD53EX053");
+        </script>
         <link
             rel="stylesheet"
             href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css"
@@ -594,8 +607,9 @@
             const timeSlider = document.getElementById("time-slider");
             const sliderLabel = document.getElementById("slider-label");
             const coverageLoading = document.getElementById("coverage-loading");
-            const coverageRangeLabel =
-                document.getElementById("coverage-range-label");
+            const coverageRangeLabel = document.getElementById(
+                "coverage-range-label",
+            );
             const datePickerRow = document.getElementById("date-picker-row");
             const coverageDateInput = document.getElementById("coverage-date");
             const timeRangePresets =
