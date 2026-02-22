@@ -569,6 +569,10 @@ const coverageDateInput = document.getElementById("coverage-date");
 const timeRangePresets = document.getElementById("time-range-presets");
 const btnLines = document.getElementById("btn-lines");
 const btnHeatmap = document.getElementById("btn-heatmap");
+const btnPlay = document.getElementById("btn-play");
+const btnStop = document.getElementById("btn-stop");
+const playbackSpeedSelect = document.getElementById("playback-speed");
+const playbackFollowSelect = document.getElementById("playback-follow");
 
 /* ── Stateless DOM helpers ─────────────────────────── */
 
@@ -640,6 +644,17 @@ class PlowApp {
         this.coverageUntil = null;
         this.coveragePreset = "24";
         this.coverageView = "lines";
+
+        // Playback
+        this.playback = {
+            playing: false,
+            startVal: 0,
+            endVal: 1000,
+            durationMs: 15000,
+            followVehicleId: null,
+            startTime: null,
+            animFrame: null,
+        };
     }
 
     /* ── Type filtering ─────────────────────────────── */
@@ -681,6 +696,170 @@ class PlowApp {
         this.map.setTypeFilter(this.buildTypeFilter());
     }
 
+    /* -- Playback UI locking ---------------------------------- */
+
+    lockPlaybackUI() {
+        timeSliderEl.setAttribute("disabled", true);
+        timeRangePresets.querySelectorAll("button").forEach(b => b.disabled = true);
+        coverageDateInput.disabled = true;
+        btnLines.disabled = true;
+        btnHeatmap.disabled = true;
+        playbackSpeedSelect.disabled = true;
+        btnPlay.disabled = true;
+        btnStop.disabled = false;
+    }
+
+    unlockPlaybackUI() {
+        timeSliderEl.removeAttribute("disabled");
+        timeRangePresets.querySelectorAll("button").forEach(b => b.disabled = false);
+        coverageDateInput.disabled = false;
+        btnLines.disabled = false;
+        btnHeatmap.disabled = false;
+        playbackSpeedSelect.disabled = false;
+        btnPlay.disabled = false;
+        btnStop.disabled = true;
+    }
+
+    /* -- Playback -------------------------------------------- */
+
+    startPlayback() {
+        if (!this.coverageData || this.playback.playing) return;
+
+        const vals = timeSliderEl.noUiSlider.get().map(Number);
+        this.playback.startVal = vals[0];
+        this.playback.endVal = vals[1];
+
+        // Compute duration
+        const speedVal = playbackSpeedSelect.value;
+        if (speedVal === "realtime") {
+            const rangeMs = this.coverageUntil.getTime() - this.coverageSince.getTime();
+            const fraction = (this.playback.endVal - this.playback.startVal) / 1000;
+            this.playback.durationMs = rangeMs * fraction;
+        } else {
+            this.playback.durationMs = parseInt(speedVal) * 1000;
+        }
+
+        // Set right handle to start (empty view)
+        timeSliderEl.noUiSlider.set([this.playback.startVal, this.playback.startVal]);
+
+        this.playback.playing = true;
+        this.playback.startTime = Date.now();
+        this.lockPlaybackUI();
+        this.playbackTick();
+    }
+
+    stopPlayback() {
+        this.playback.playing = false;
+        if (this.playback.animFrame) {
+            cancelAnimationFrame(this.playback.animFrame);
+            this.playback.animFrame = null;
+        }
+        this.unlockPlaybackUI();
+    }
+
+    playbackTick() {
+        if (!this.playback.playing) return;
+
+        const elapsed = Date.now() - this.playback.startTime;
+        const progress = Math.min(elapsed / this.playback.durationMs, 1);
+        const currentVal = this.playback.startVal + progress * (this.playback.endVal - this.playback.startVal);
+
+        timeSliderEl.noUiSlider.set([this.playback.startVal, currentVal]);
+
+        // Follow vehicle
+        if (this.playback.followVehicleId) {
+            const time = this.sliderToTime(currentVal);
+            const pos = this.interpolateVehiclePosition(this.playback.followVehicleId, time);
+            if (pos) {
+                this.map.map.easeTo({ center: pos, duration: 300 });
+            }
+        }
+
+        if (progress >= 1) {
+            this.playback.playing = false;
+            this.playback.animFrame = null;
+            this.unlockPlaybackUI();
+            return;
+        }
+
+        this.playback.animFrame = requestAnimationFrame(() => this.playbackTick());
+    }
+
+    /* -- Follow vehicle -------------------------------------- */
+
+    populateFollowDropdown() {
+        const select = playbackFollowSelect;
+        const currentVal = select.value;
+        select.innerHTML = '<option value="">None</option>';
+
+        if (!this.coverageData) return;
+
+        const seen = new Map();
+        for (const f of this.coverageData.features) {
+            const vid = f.properties.vehicle_id;
+            if (seen.has(vid)) continue;
+            if (!this.isTypeVisible(f.properties.vehicle_type)) continue;
+            seen.set(vid, f.properties.description);
+        }
+
+        const sorted = [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+        for (const [vid, desc] of sorted) {
+            const opt = document.createElement("option");
+            opt.value = vid;
+            opt.textContent = desc;
+            select.appendChild(opt);
+        }
+
+        // Restore selection if still valid
+        if ([...select.options].some(o => o.value === currentVal)) {
+            select.value = currentVal;
+        } else {
+            select.value = "";
+            this.playback.followVehicleId = null;
+        }
+    }
+
+    isTypeVisible(vehicleType) {
+        for (const row of document.querySelectorAll("#legend-vehicles .legend-row")) {
+            const cb = row.querySelector(".legend-check");
+            if (!cb.checked) continue;
+            const types = row.dataset.types;
+            if (types === "__OTHER__") {
+                if (!KNOWN_TYPES.includes(vehicleType)) return true;
+            } else if (types.split(",").includes(vehicleType)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    interpolateVehiclePosition(vehicleId, time) {
+        if (!this.coverageData) return null;
+        const timeMs = time.getTime();
+        let bestPos = null;
+
+        for (const feature of this.coverageData.features) {
+            if (feature.properties.vehicle_id !== vehicleId) continue;
+            const coords = feature.geometry.coordinates;
+            const timestamps = feature.properties.timestamps;
+
+            for (let i = 0; i < timestamps.length - 1; i++) {
+                const t0 = new Date(timestamps[i]).getTime();
+                const t1 = new Date(timestamps[i + 1]).getTime();
+                if (timeMs >= t0 && timeMs <= t1) {
+                    const frac = (timeMs - t0) / (t1 - t0);
+                    return [
+                        coords[i][0] + frac * (coords[i + 1][0] - coords[i][0]),
+                        coords[i][1] + frac * (coords[i + 1][1] - coords[i][1]),
+                    ];
+                }
+                if (t0 <= timeMs) bestPos = coords[i];
+                if (t1 <= timeMs) bestPos = coords[i + 1];
+            }
+        }
+        return bestPos;
+    }
+
     /* ── Mode switching ────────────────────────────── */
 
     async switchMode(mode) {
@@ -697,6 +876,7 @@ class PlowApp {
     }
 
     enterRealtime() {
+        this.stopPlayback();
         this.map.abortCoverage();
         this.map.clearCoverage();
         coveragePanelEl.style.display = "none";
@@ -723,6 +903,7 @@ class PlowApp {
         document.getElementById("db-size").style.display = "none";
         vehicleHint.style.display = "none";
         coveragePanelEl.style.display = "block";
+        btnPlay.disabled = true;
 
         this.coveragePreset = "24";
         setPresetActive("24");
@@ -733,6 +914,7 @@ class PlowApp {
     /* ── Coverage ──────────────────────────────────── */
 
     async loadCoverageForRange(since, until) {
+        this.stopPlayback();
         const signal = this.map.newCoverageSignal();
 
         this.coverageSince = since;
@@ -754,6 +936,8 @@ class PlowApp {
         coverageLoading.style.display = "none";
         this.renderCoverage(0, 1000);
         this.applyTypeFilters();
+        this.populateFollowDropdown();
+        btnPlay.disabled = false;
     }
 
     async loadCoverageForDate(dateStr) {
@@ -1003,6 +1187,14 @@ timeSliderEl.noUiSlider.on("update", () => {
 // Legend type checkboxes
 document.getElementById("legend-vehicles").addEventListener("change", () => {
     app.applyTypeFilters();
+    app.populateFollowDropdown();
+});
+
+// Playback controls
+btnPlay.addEventListener("click", () => app.startPlayback());
+btnStop.addEventListener("click", () => app.stopPlayback());
+playbackFollowSelect.addEventListener("change", () => {
+    app.playback.followVehicleId = playbackFollowSelect.value || null;
 });
 
 // Detail close

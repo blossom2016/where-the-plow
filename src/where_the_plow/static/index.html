@@ -68,6 +68,25 @@
                 <div class="coverage-hint">Drag the handles to narrow the visible time range</div>
                 <span id="slider-label"></span>
                 <div id="time-slider"></div>
+                <div id="playback-controls">
+                    <div class="playback-row">
+                        <button id="btn-play" title="Play">&#9654;</button>
+                        <button id="btn-stop" title="Stop" disabled>&#9632;</button>
+                        <select id="playback-speed" title="Playback speed">
+                            <option value="15" selected>15s</option>
+                            <option value="30">30s</option>
+                            <option value="60">1m</option>
+                            <option value="300">5m</option>
+                            <option value="realtime">Realtime</option>
+                        </select>
+                    </div>
+                    <div class="playback-row">
+                        <label class="playback-label">Follow:</label>
+                        <select id="playback-follow" title="Follow vehicle">
+                            <option value="">None</option>
+                        </select>
+                    </div>
+                </div>
                 <div id="coverage-loading">Loading coverage data...</div>
             </div>
             <div id="legend">
