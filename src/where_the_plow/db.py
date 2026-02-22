@@ -59,6 +59,8 @@ class Database:
             CREATE TABLE IF NOT EXISTS viewports (
                 id          BIGINT DEFAULT nextval('viewports_seq') PRIMARY KEY,
                 timestamp   TIMESTAMPTZ NOT NULL DEFAULT now(),
+                ip          VARCHAR,
+                user_agent  VARCHAR,
                 zoom        DOUBLE NOT NULL,
                 center_lng  DOUBLE NOT NULL,
                 center_lat  DOUBLE NOT NULL,
@@ -66,6 +68,22 @@ class Database:
                 sw_lat      DOUBLE NOT NULL,
                 ne_lng      DOUBLE NOT NULL,
                 ne_lat      DOUBLE NOT NULL
+            )
+        """)
+        cur.execute("""
+            CREATE SEQUENCE IF NOT EXISTS signups_seq
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS signups (
+                id              BIGINT DEFAULT nextval('signups_seq') PRIMARY KEY,
+                timestamp       TIMESTAMPTZ NOT NULL DEFAULT now(),
+                email           VARCHAR NOT NULL,
+                ip              VARCHAR,
+                user_agent      VARCHAR,
+                notify_plow     BOOLEAN NOT NULL DEFAULT FALSE,
+                notify_projects BOOLEAN NOT NULL DEFAULT FALSE,
+                notify_siliconharbour BOOLEAN NOT NULL DEFAULT FALSE,
+                note            VARCHAR
             )
         """)
 
@@ -81,6 +99,33 @@ class Database:
         cur.execute(
             "UPDATE positions SET geom = ST_Point(longitude, latitude) WHERE geom IS NULL"
         )
+
+        # Migration: add ip/user_agent columns to viewports
+        vp_cols = {
+            r[0]
+            for r in cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='viewports'"
+            ).fetchall()
+        }
+        if "ip" not in vp_cols:
+            cur.execute("ALTER TABLE viewports ADD COLUMN ip VARCHAR")
+        if "user_agent" not in vp_cols:
+            cur.execute("ALTER TABLE viewports ADD COLUMN user_agent VARCHAR")
+
+        # Migration: add ip/user_agent columns to signups
+        su_cols = {
+            r[0]
+            for r in cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='signups'"
+            ).fetchall()
+        }
+        if su_cols:  # table exists from a prior run
+            if "ip" not in su_cols:
+                cur.execute("ALTER TABLE signups ADD COLUMN ip VARCHAR")
+            if "user_agent" not in su_cols:
+                cur.execute("ALTER TABLE signups ADD COLUMN user_agent VARCHAR")
 
     def upsert_vehicles(self, vehicles: list[dict], now: datetime):
         cur = self._cursor()
@@ -408,15 +453,69 @@ class Database:
         sw_lat: float,
         ne_lng: float,
         ne_lat: float,
+        ip: str | None = None,
+        user_agent: str | None = None,
     ):
         """Record a user viewport focus event."""
         self._cursor().execute(
             """
-            INSERT INTO viewports (zoom, center_lng, center_lat, sw_lng, sw_lat, ne_lng, ne_lat)
+            INSERT INTO viewports (ip, user_agent, zoom, center_lng, center_lat, sw_lng, sw_lat, ne_lng, ne_lat)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ip,
+                user_agent,
+                zoom,
+                center_lng,
+                center_lat,
+                sw_lng,
+                sw_lat,
+                ne_lng,
+                ne_lat,
+            ],
+        )
+
+    def insert_signup(
+        self,
+        email: str,
+        ip: str | None = None,
+        user_agent: str | None = None,
+        notify_plow: bool = False,
+        notify_projects: bool = False,
+        notify_siliconharbour: bool = False,
+        note: str | None = None,
+    ):
+        """Record an email signup."""
+        self._cursor().execute(
+            """
+            INSERT INTO signups (email, ip, user_agent, notify_plow, notify_projects, notify_siliconharbour, note)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            [zoom, center_lng, center_lat, sw_lng, sw_lat, ne_lng, ne_lat],
+            [
+                email,
+                ip,
+                user_agent,
+                notify_plow,
+                notify_projects,
+                notify_siliconharbour,
+                note,
+            ],
         )
+
+    def count_recent_signups(self, ip: str, minutes: int = 30) -> int:
+        """Count signups from an IP in the last N minutes."""
+        row = (
+            self._cursor()
+            .execute(
+                """
+            SELECT count(*) FROM signups
+            WHERE ip = ? AND timestamp > now() - INTERVAL (?) MINUTE
+            """,
+                [ip, minutes],
+            )
+            .fetchone()
+        )
+        return row[0] if row else 0
 
     def close(self):
         self.conn.close()

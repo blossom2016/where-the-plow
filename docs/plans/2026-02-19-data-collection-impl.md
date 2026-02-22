@@ -799,7 +799,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutdown complete")
 
 
-app = FastAPI(title="Where the Plow", lifespan=lifespan)
+app = FastAPI(title="where the plow", lifespan=lifespan)
 
 
 @app.get("/health")

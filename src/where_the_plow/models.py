@@ -106,3 +106,15 @@ class StatsResponse(BaseModel):
     earliest: str | None = Field(None, description="Earliest position timestamp")
     latest: str | None = Field(None, description="Latest position timestamp")
     db_size_bytes: int | None = Field(None, description="Database file size in bytes")
+
+
+class SignupRequest(BaseModel):
+    email: str = Field(..., description="Email address", min_length=3, max_length=320)
+    notify_plow: bool = Field(False, description="Notify when plow visits street")
+    notify_projects: bool = Field(False, description="Notify about other projects")
+    notify_siliconharbour: bool = Field(
+        False, description="Sign up for Silicon Harbour newsletter"
+    )
+    note: str | None = Field(
+        None, description="Optional note from user", max_length=2000
+    )

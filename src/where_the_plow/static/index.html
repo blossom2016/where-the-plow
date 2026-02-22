@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Where the Plow</title>
+        <title>where the plow</title>
         <script
             async
             src="https://www.googletagmanager.com/gtag/js?id=G-GWD53EX053"
@@ -32,14 +32,16 @@
         <div id="map"></div>
         <button id="panel-toggle" title="Toggle info panel">&#9776;</button>
         <div id="info-panel">
-            <h3>Where the Plow</h3>
+            <h3>where the plow</h3>
             <div id="mode-toggle" class="toggle-group">
                 <button id="btn-realtime" class="active">Realtime</button>
                 <button id="btn-coverage">Coverage</button>
             </div>
             <div id="vehicle-count">Loading vehicles...</div>
             <div id="db-size" style="display: none"></div>
-            <div id="vehicle-hint">Select a vehicle to see its trail and details</div>
+            <div id="vehicle-hint">
+                Select a vehicle to see its trail and details
+            </div>
             <div id="vehicle-detail">
                 <span class="detail-close" id="detail-close">&times;</span>
                 <div class="detail-name" id="detail-name"></div>
@@ -49,7 +51,9 @@
                 <div class="detail-row" id="detail-updated"></div>
             </div>
             <div id="coverage-panel">
-                <div class="coverage-hint">Load coverage data for a time window</div>
+                <div class="coverage-hint">
+                    Load coverage data for a time window
+                </div>
                 <div id="time-range-presets" class="toggle-group">
                     <button data-hours="6">6h</button>
                     <button data-hours="12">12h</button>
@@ -60,18 +64,24 @@
                     <input type="date" id="coverage-date" />
                 </div>
                 <div id="coverage-range-label"></div>
-                <div class="coverage-hint">View as route lines or activity heatmap</div>
+                <div class="coverage-hint">
+                    View as route lines or activity heatmap
+                </div>
                 <div id="coverage-view-toggle" class="toggle-group">
                     <button id="btn-lines" class="active">Lines</button>
                     <button id="btn-heatmap">Heatmap</button>
                 </div>
-                <div class="coverage-hint">Drag the handles to narrow the visible time range</div>
+                <div class="coverage-hint">
+                    Drag the handles to narrow the visible time range
+                </div>
                 <span id="slider-label"></span>
                 <div id="time-slider"></div>
                 <div id="playback-controls">
                     <div class="playback-row">
                         <button id="btn-play" title="Play">&#9654;</button>
-                        <button id="btn-stop" title="Stop" disabled>&#9632;</button>
+                        <button id="btn-stop" title="Stop" disabled>
+                            &#9632;
+                        </button>
                         <select id="playback-speed" title="Playback speed">
                             <option value="15" selected>15s</option>
                             <option value="30">30s</option>
@@ -98,13 +108,20 @@
                 </div>
                 <div id="legend-body">
                     <div id="legend-vehicles">
-                        <label class="legend-row" data-types="SA PLOW TRUCK,TA PLOW TRUCK">
+                        <label
+                            class="legend-row"
+                            data-types="SA PLOW TRUCK,TA PLOW TRUCK"
+                        >
                             <span
                                 class="legend-swatch"
                                 style="background: #2563eb"
                             ></span
                             >Plow truck
-                            <input type="checkbox" checked class="legend-check" />
+                            <input
+                                type="checkbox"
+                                checked
+                                class="legend-check"
+                            />
                         </label>
                         <label class="legend-row" data-types="LOADER">
                             <span
@@ -112,7 +129,11 @@
                                 style="background: #ea580c"
                             ></span
                             >Loader
-                            <input type="checkbox" checked class="legend-check" />
+                            <input
+                                type="checkbox"
+                                checked
+                                class="legend-check"
+                            />
                         </label>
                         <label class="legend-row" data-types="GRADER">
                             <span
@@ -120,7 +141,11 @@
                                 style="background: #16a34a"
                             ></span
                             >Grader
-                            <input type="checkbox" checked class="legend-check" />
+                            <input
+                                type="checkbox"
+                                checked
+                                class="legend-check"
+                            />
                         </label>
                         <label class="legend-row" data-types="__OTHER__">
                             <span
@@ -128,7 +153,11 @@
                                 style="background: #6b7280"
                             ></span
                             >Other
-                            <input type="checkbox" checked class="legend-check" />
+                            <input
+                                type="checkbox"
+                                checked
+                                class="legend-check"
+                            />
                         </label>
                     </div>
                     <div id="legend-heatmap" style="display: none">
@@ -155,6 +184,163 @@
                 >
                 &middot;
                 <a href="/docs">API Docs</a>
+                &middot;
+                <a href="#" id="btn-view-info">About</a>
+            </div>
+        </div>
+        <!-- Welcome modal -->
+        <div id="welcome-overlay">
+            <div id="welcome-modal">
+                <button id="welcome-close" title="Close">&times;</button>
+                <h2>where the plow</h2>
+                <p>
+                    Snowplow activity in
+                    <strong>St. John's, Newfoundland</strong>. See which streets
+                    have been plowed, track individual vehicles in realtime, and
+                    explore historical coverage.
+                </p>
+                <div class="welcome-section">
+                    <h4>Data</h4>
+                    <p>
+                        Vehicle positions are polled every 6 seconds from the
+                        <a
+                            href="https://map.stjohns.ca/avl/"
+                            target="_blank"
+                            rel="noopener"
+                            >City of St. John's AVL</a
+                        >
+                        system and stored for historical playback.
+                    </p>
+                </div>
+                <div class="welcome-section">
+                    <h4>How to use</h4>
+                    <ul>
+                        <li>
+                            <strong>Realtime</strong>: watch vehicles move live.
+                            Click one to see its recent trail.
+                        </li>
+                        <li>
+                            <strong>Coverage</strong>: view plowed routes over
+                            the last 6/12/24 hours, or pick a date. Use the time
+                            slider to scrub through the window, or hit play for
+                            an animated time-lapse.
+                        </li>
+                        <li>
+                            Use the <strong>legend checkboxes</strong> to filter
+                            by vehicle type.
+                        </li>
+                    </ul>
+                </div>
+                <div class="welcome-section">
+                    <h4>Legend</h4>
+                    <div class="welcome-legend">
+                        <span
+                            ><span
+                                class="legend-swatch"
+                                style="background: #2563eb"
+                            ></span
+                            >Plow truck</span
+                        >
+                        <span
+                            ><span
+                                class="legend-swatch"
+                                style="background: #ea580c"
+                            ></span
+                            >Loader</span
+                        >
+                        <span
+                            ><span
+                                class="legend-swatch"
+                                style="background: #16a34a"
+                            ></span
+                            >Grader</span
+                        >
+                        <span
+                            ><span
+                                class="legend-swatch"
+                                style="background: #6b7280"
+                            ></span
+                            >Other</span
+                        >
+                    </div>
+                </div>
+                <div class="welcome-section">
+                    <h4>About</h4>
+                    <p>
+                        Built by
+                        <a
+                            href="https://jackharrhy.dev"
+                            target="_blank"
+                            rel="noopener"
+                            >Jack Harrhy</a
+                        >. Source on
+                        <a
+                            href="https://github.com/jackharrhy/where-the-plow"
+                            target="_blank"
+                            rel="noopener"
+                            >GitHub</a
+                        >.
+                    </p>
+                </div>
+
+                <button id="welcome-cta" class="welcome-cta-btn">
+                    I'd like to know when a plow is visiting my street!
+                    <span class="cta-sub"
+                        >Or maybe, I just want to know more about what you're
+                        building here &amp; elsewhere.</span
+                    >
+                </button>
+
+                <div id="welcome-signup" style="display: none">
+                    <p class="signup-note">
+                        This feature isn't built yet! But if you leave your
+                        email, I'll let you know when it, and other new
+                        features, are ready.
+                    </p>
+                    <input
+                        type="email"
+                        id="signup-email"
+                        placeholder="you@example.com"
+                        autocomplete="email"
+                    />
+                    <label class="signup-check-row">
+                        <input type="checkbox" id="signup-projects" />
+                        Let me know about other projects you launch as well
+                    </label>
+                    <label class="signup-check-row">
+                        <input type="checkbox" id="signup-siliconharbour" />
+                        <span
+                            >Sign me up for local tech news from
+                            <a
+                                href="https://siliconharbour.dev"
+                                target="_blank"
+                                rel="noopener"
+                                onclick="event.stopPropagation()"
+                                >siliconharbour.dev</a
+                            >, when that newsletter launches</span
+                        >
+                    </label>
+                    <button
+                        id="signup-note-toggle"
+                        class="signup-note-toggle-btn"
+                    >
+                        Leave a note
+                    </button>
+                    <textarea
+                        id="signup-note-text"
+                        placeholder="Anything you'd like to share..."
+                        rows="3"
+                        style="display: none"
+                    ></textarea>
+                    <button id="signup-submit" class="welcome-cta-btn">
+                        Sign me up
+                    </button>
+                    <div id="signup-status"></div>
+                </div>
+
+                <button id="welcome-dismiss" class="welcome-dismiss-btn">
+                    Got it, show me the map
+                </button>
             </div>
         </div>
         <script src="/static/app.js"></script>

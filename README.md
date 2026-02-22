@@ -1,6 +1,6 @@
-# Where the Plow
+# where the plow
 
-Real-time tracking of City of St. John's snowplow vehicles.
+Real-time and historical tracking of City of St. John's snowplow vehicles.
 
 Polls the city's public AVL (Automatic Vehicle Location) API every 6 seconds, stores historical position data in DuckDB, serves it as GeoJSON, and visualizes it on a live map.
 
@@ -11,6 +11,12 @@ Polls the city's public AVL (Automatic Vehicle Location) API every 6 seconds, st
 ### Local
 
 Requires [uv](https://docs.astral.sh/uv/):
+
+```
+uv run cli.py dev
+```
+
+This starts the app with auto-reload and sets `DB_PATH=./data/plow.db`. You can also run uvicorn directly:
 
 ```
 uv run uvicorn where_the_plow.main:app --host 0.0.0.0 --port 8000
@@ -39,12 +45,16 @@ All geo endpoints return GeoJSON. Full OpenAPI docs at [`/docs`](https://plow.ja
 
 | Endpoint | Description |
 |---|---|
-| `GET /vehicles` | Latest position for every vehicle |
+| `GET /vehicles` | Latest position for every vehicle (with mini-trails) |
 | `GET /vehicles/nearby?lat=&lng=&radius=` | Vehicles within radius (meters) |
 | `GET /vehicles/{id}/history?since=&until=` | Position history for one vehicle |
 | `GET /coverage?since=&until=` | Per-vehicle LineString trails with timestamps |
 | `GET /stats` | Collection statistics |
 | `GET /health` | Health check |
+| `POST /track` | Record anonymous viewport focus event |
+| `POST /signup` | Email signup for notifications |
+
+All GET list endpoints support cursor-based pagination via `limit` and `after` query parameters. Write endpoints (`/track`, `/signup`) are rate-limited per IP.
 
 ## Database schema
 
@@ -76,6 +86,8 @@ CREATE TABLE positions (
 
 Deduplication is by `(vehicle_id, timestamp)` composite key -- if the API returns the same `LocationDateTime` for a vehicle, the row is skipped.
 
+There are also `viewports` (analytics) and `signups` (email signups) tables -- see `db.py` for their full schemas.
+
 ## Stack
 
-Python 3.12, FastAPI, DuckDB (spatial), httpx, MapLibre GL JS, Docker.
+Python 3.12, FastAPI, DuckDB (spatial), httpx, MapLibre GL JS, noUiSlider, Docker.

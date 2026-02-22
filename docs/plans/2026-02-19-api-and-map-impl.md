@@ -844,7 +844,7 @@ Update `main.py` to include the router and add OpenAPI metadata:
 from where_the_plow.routes import router
 
 app = FastAPI(
-    title="Where the Plow",
+    title="where the plow",
     description="Real-time and historical plow tracker for the City of St. John's. "
                 "All geo endpoints return GeoJSON FeatureCollections with cursor-based pagination.",
     version="0.1.0",

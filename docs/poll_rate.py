@@ -18,8 +18,6 @@ Output:
 
 import argparse
 import time
-import json
-import sys
 from datetime import datetime, timezone
 
 import httpx
@@ -101,9 +99,18 @@ def diff_snapshots(prev: dict[str, dict], curr: dict[str, dict]) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Poll AVL endpoint to measure update rate")
-    parser.add_argument("--duration", type=int, default=120, help="How long to poll in seconds (default: 120)")
-    parser.add_argument("--interval", type=int, default=3, help="Poll interval in seconds (default: 3)")
+    parser = argparse.ArgumentParser(
+        description="Poll AVL endpoint to measure update rate"
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=120,
+        help="How long to poll in seconds (default: 120)",
+    )
+    parser.add_argument(
+        "--interval", type=int, default=3, help="Poll interval in seconds (default: 3)"
+    )
     args = parser.parse_args()
 
     duration = args.duration
@@ -111,7 +118,7 @@ def main():
     total_ticks = duration // interval
 
     print(f"Polling every {interval}s for {duration}s ({total_ticks} ticks)")
-    print(f"Filtering: isDriving = 'maybe' (active vehicles only)")
+    print("Filtering: isDriving = 'maybe' (active vehicles only)")
     print("-" * 70)
 
     client = httpx.Client()
@@ -146,7 +153,9 @@ def main():
                 ticks_with_changes += 1
                 updated = [v for v in changes.values() if v["type"] == "updated"]
                 appeared = [v for v in changes.values() if v["type"] == "appeared"]
-                disappeared = [v for v in changes.values() if v["type"] == "disappeared"]
+                disappeared = [
+                    v for v in changes.values() if v["type"] == "disappeared"
+                ]
 
                 parts = []
                 if updated:
@@ -156,12 +165,16 @@ def main():
                 if disappeared:
                     parts.append(f"{len(disappeared)} disappeared")
 
-                print(f"[{now}] Tick {tick:3d}: {len(curr)} vehicles | {', '.join(parts)}")
+                print(
+                    f"[{now}] Tick {tick:3d}: {len(curr)} vehicles | {', '.join(parts)}"
+                )
 
                 # Track per-vehicle updates
                 for vid, change in changes.items():
                     if change["type"] == "updated":
-                        vehicle_update_counts[vid] = vehicle_update_counts.get(vid, 0) + 1
+                        vehicle_update_counts[vid] = (
+                            vehicle_update_counts.get(vid, 0) + 1
+                        )
                         vehicle_descriptions[vid] = change["description"]
                     # Track descriptions/types from current data
                     if vid in curr:
@@ -188,9 +201,11 @@ def main():
     print("RESULTS")
     print("=" * 70)
     print(f"Total ticks polled:        {actual_ticks}")
-    print(f"Ticks with changes:        {ticks_with_changes} ({ticks_with_changes/actual_ticks*100:.1f}%)")
+    print(
+        f"Ticks with changes:        {ticks_with_changes} ({ticks_with_changes / actual_ticks * 100:.1f}%)"
+    )
     print(f"Ticks with no changes:     {actual_ticks - ticks_with_changes}")
-    print(f"Avg changes per tick:      {sum(tick_change_counts)/actual_ticks:.1f}")
+    print(f"Avg changes per tick:      {sum(tick_change_counts) / actual_ticks:.1f}")
     print(f"Max changes in one tick:   {max(tick_change_counts)}")
     print()
 
@@ -199,7 +214,7 @@ def main():
         print()
         print("Per-vehicle update frequency (sorted by most updates):")
         print(f"  {'Vehicle':<30} {'Type':<16} {'Updates':>8} {'Rate':>10}")
-        print(f"  {'-'*30} {'-'*16} {'-'*8} {'-'*10}")
+        print(f"  {'-' * 30} {'-' * 16} {'-' * 8} {'-' * 10}")
         for vid, count in sorted(vehicle_update_counts.items(), key=lambda x: -x[1]):
             desc = vehicle_descriptions.get(vid, vid)
             vtype = vehicle_types.get(vid, "?")
@@ -209,13 +224,23 @@ def main():
     print()
     print("Interpretation:")
     if ticks_with_changes / actual_ticks > 0.8:
-        print(f"  Data updates very frequently. Polling every {interval}s is reasonable.")
+        print(
+            f"  Data updates very frequently. Polling every {interval}s is reasonable."
+        )
     elif ticks_with_changes / actual_ticks > 0.4:
-        effective = actual_ticks * interval // ticks_with_changes if ticks_with_changes else 0
-        print(f"  Data updates moderately. Consider polling every ~{effective}s instead.")
+        effective = (
+            actual_ticks * interval // ticks_with_changes if ticks_with_changes else 0
+        )
+        print(
+            f"  Data updates moderately. Consider polling every ~{effective}s instead."
+        )
     else:
-        effective = actual_ticks * interval // ticks_with_changes if ticks_with_changes else 0
-        print(f"  Data updates infrequently. Polling every ~{effective}s would be sufficient.")
+        effective = (
+            actual_ticks * interval // ticks_with_changes if ticks_with_changes else 0
+        )
+        print(
+            f"  Data updates infrequently. Polling every ~{effective}s would be sufficient."
+        )
 
 
 if __name__ == "__main__":

@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Where the Plow",
+    title="where the plow",
     description="Real-time and historical plow tracker for the City of St. John's. "
     "All geo endpoints return GeoJSON FeatureCollections with cursor-based pagination.\n\n"
     "**WARNING:** This API is not stable. Monitor the `openapi.json` file for breaking changes. "

@@ -1,10 +1,45 @@
 # src/where_the_plow/routes.py
+import time
+from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from where_the_plow import cache
+
+
+# ── Generic in-memory rate limiter ────────────────────
+
+
+class RateLimiter:
+    """Sliding-window rate limiter keyed by an arbitrary string (typically IP)."""
+
+    def __init__(self, max_hits: int, window_seconds: int):
+        self.max_hits = max_hits
+        self.window = window_seconds
+        self._hits: dict[str, list[float]] = defaultdict(list)
+
+    def is_limited(self, key: str) -> bool:
+        now = time.monotonic()
+        bucket = self._hits[key]
+        self._hits[key] = [t for t in bucket if now - t < self.window]
+        if len(self._hits[key]) >= self.max_hits:
+            return True
+        self._hits[key].append(now)
+        return False
+
+
+_signup_limiter = RateLimiter(max_hits=3, window_seconds=1800)  # 3 per 30 min
+_viewport_limiter = RateLimiter(max_hits=60, window_seconds=300)  # 60 per 5 min
+
+
+def _client_ip(request: Request) -> str:
+    return request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown"
+    )
+
+
 from where_the_plow.models import (
     CoverageFeature,
     CoverageFeatureCollection,
@@ -15,6 +50,7 @@ from where_the_plow.models import (
     LineStringGeometry,
     Pagination,
     PointGeometry,
+    SignupRequest,
     StatsResponse,
     ViewportTrack,
 )
@@ -231,10 +267,18 @@ def get_stats(request: Request):
     tags=["analytics"],
 )
 def track_viewport(request: Request, body: ViewportTrack):
+    ip = _client_ip(request)
+
+    if _viewport_limiter.is_limited(ip):
+        return Response(status_code=429)
+
+    user_agent = request.headers.get("user-agent", "")
     db = request.app.state.db
     sw = body.bounds.get("sw", [0, 0])
     ne = body.bounds.get("ne", [0, 0])
     db.insert_viewport(
+        ip=ip,
+        user_agent=user_agent,
         zoom=body.zoom,
         center_lng=body.center[0],
         center_lat=body.center[1],
@@ -242,5 +286,33 @@ def track_viewport(request: Request, body: ViewportTrack):
         sw_lat=sw[1],
         ne_lng=ne[0],
         ne_lat=ne[1],
+    )
+    return Response(status_code=204)
+
+
+@router.post(
+    "/signup",
+    status_code=204,
+    summary="Email signup",
+    description="Records an email signup for notifications about plow tracking, "
+    "new projects, or the Silicon Harbour newsletter.",
+    tags=["signup"],
+)
+def signup(request: Request, body: SignupRequest):
+    ip = _client_ip(request)
+    user_agent = request.headers.get("user-agent", "")
+
+    if _signup_limiter.is_limited(ip):
+        return Response(status_code=429)
+
+    db = request.app.state.db
+    db.insert_signup(
+        email=body.email,
+        ip=ip,
+        user_agent=user_agent,
+        notify_plow=body.notify_plow,
+        notify_projects=body.notify_projects,
+        notify_siliconharbour=body.notify_siliconharbour,
+        note=body.note,
     )
     return Response(status_code=204)

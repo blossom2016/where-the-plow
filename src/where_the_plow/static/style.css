@@ -532,3 +532,301 @@ body {
         display: block;
     }
 }
+
+/* ── Welcome modal ─────────────────────────────────── */
+
+#welcome-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-y: auto;
+}
+
+#welcome-overlay.hidden {
+    display: none;
+}
+
+#welcome-modal {
+    position: relative;
+    background: rgba(20, 20, 30, 0.97);
+    color: var(--color-text);
+    border-radius: 12px;
+    padding: 28px 32px;
+    max-width: 480px;
+    width: 100%;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.6;
+    border: var(--border-strong);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+#welcome-modal h2 {
+    margin: 0 0 8px 0;
+    font-size: 20px;
+    color: var(--color-text-bright);
+}
+
+#welcome-modal > p {
+    margin: 0 0 16px 0;
+    color: var(--color-text-secondary);
+}
+
+#welcome-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px;
+}
+
+#welcome-close:hover {
+    color: var(--color-text-bright);
+}
+
+.welcome-section {
+    margin-bottom: 14px;
+}
+
+.welcome-section h4 {
+    margin: 0 0 4px 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+}
+
+.welcome-section p {
+    margin: 0;
+    color: var(--color-text);
+}
+
+.welcome-section ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.welcome-section li {
+    margin-bottom: 4px;
+}
+
+.welcome-section a {
+    color: var(--color-link);
+    text-decoration: none;
+}
+
+.welcome-section a:hover {
+    text-decoration: underline;
+    color: var(--color-link-hover);
+}
+
+.welcome-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.welcome-legend > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+/* ── CTA & signup ──────────────────────────────────── */
+
+.welcome-cta-btn {
+    display: block;
+    width: 100%;
+    padding: 10px 16px;
+    margin-top: 14px;
+    border: none;
+    border-radius: 6px;
+    background: var(--color-accent);
+    color: #111;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.welcome-cta-btn:hover {
+    background: var(--color-link-hover);
+}
+
+.welcome-cta-btn:active {
+    transform: scale(0.98);
+}
+
+.welcome-cta-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.cta-sub {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    opacity: 0.7;
+    margin-top: 2px;
+}
+
+#welcome-signup {
+    margin-top: 12px;
+    padding: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    border: var(--border-subtle);
+}
+
+#welcome-signup .signup-note {
+    margin: 0 0 10px 0;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+}
+
+#signup-email {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: var(--border-medium);
+    background: var(--color-input-bg);
+    color: var(--color-text-bright);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+}
+
+#signup-email:focus {
+    outline: none;
+    border-color: var(--color-accent);
+}
+
+.signup-check-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+    cursor: pointer;
+    line-height: 1.4;
+}
+
+.signup-check-row input[type="checkbox"] {
+    margin-top: 2px;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.signup-check-row a {
+    color: var(--color-link);
+    text-decoration: none;
+}
+
+.signup-check-row a:hover {
+    text-decoration: underline;
+}
+
+.signup-note-toggle-btn {
+    background: none;
+    border: none;
+    color: var(--color-link);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 0;
+    margin-top: 4px;
+}
+
+.signup-note-toggle-btn:hover {
+    color: var(--color-link-hover);
+    text-decoration: underline;
+}
+
+#signup-note-text {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: var(--border-medium);
+    background: var(--color-input-bg);
+    color: var(--color-text-bright);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    box-sizing: border-box;
+    resize: vertical;
+    margin-top: 6px;
+    margin-bottom: 4px;
+}
+
+#signup-note-text:focus {
+    outline: none;
+    border-color: var(--color-accent);
+}
+
+#signup-status {
+    font-size: 12px;
+    margin-top: 8px;
+    min-height: 18px;
+}
+
+#signup-status.success {
+    color: #4ade80;
+}
+
+#signup-status.error {
+    color: #f87171;
+}
+
+.welcome-dismiss-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 16px;
+    margin-top: 14px;
+    border: var(--border-medium);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.welcome-dismiss-btn:hover {
+    background: var(--color-hover-bg);
+    color: var(--color-text-bright);
+}
+
+/* ── Welcome modal mobile ──────────────────────────── */
+
+@media (max-width: 768px) {
+    #welcome-overlay {
+        padding: 12px;
+    }
+
+    #welcome-modal {
+        padding: 20px 18px;
+        font-size: 12px;
+    }
+
+    #welcome-modal h2 {
+        font-size: 17px;
+    }
+}
