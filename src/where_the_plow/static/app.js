@@ -1,3 +1,137 @@
+/* ── Address search ──────────────────────────────────── */
+
+const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
+const ST_JOHNS_VIEWBOX = "-52.85,47.45,-52.55,47.65"; // minlon,minlat,maxlon,maxlat
+
+const addressSearchInput = document.getElementById("address-search");
+const searchBtn = document.getElementById("search-btn");
+const searchResultsEl = document.getElementById("search-results");
+const searchContainer = document.getElementById("search-container");
+
+async function searchAddress(query) {
+  const q = query.trim();
+  if (!q) return [];
+
+  const params = new URLSearchParams({
+    q: q + ", St. John's Newfoundland",
+    format: "json",
+    limit: "5",
+    viewbox: ST_JOHNS_VIEWBOX,
+    bounded: "0",
+  });
+
+  const resp = await fetch(`${NOMINATIM_URL}?${params}`, {
+    headers: {
+      "User-Agent": "WhereThePlow/1.0 (St. John's snowplow tracker; https://plow.jackharrhy.dev)",
+    },
+  });
+  if (!resp.ok) throw new Error("Search failed");
+  return resp.json();
+}
+
+function showSearchResults(results, query) {
+  searchResultsEl.innerHTML = "";
+  searchResultsEl.classList.remove("search-results-hidden");
+  searchContainer.classList.add("has-results");
+
+  if (results.length === 0) {
+    const item = document.createElement("div");
+    item.className = "search-result-item search-result-error";
+    item.textContent = "No results found. Try a street name or address.";
+    searchResultsEl.appendChild(item);
+    return;
+  }
+
+  for (const r of results) {
+    const item = document.createElement("div");
+    item.className = "search-result-item";
+    item.dataset.lon = r.lon;
+    item.dataset.lat = r.lat;
+    item.dataset.display = r.display_name;
+    item.innerHTML =
+      '<span class="search-result-name">' +
+      escapeHtml(r.display_name) +
+      "</span>";
+    item.addEventListener("click", () => {
+      const lon = parseFloat(item.dataset.lon);
+      const lat = parseFloat(item.dataset.lat);
+      plowMap.map.flyTo({ center: [lon, lat], zoom: 17, duration: 1000 });
+      addressSearchInput.value = item.dataset.display;
+      hideSearchResults();
+      addressSearchInput.blur();
+      gtag("event", "address_search", { query: query.trim() });
+    });
+    searchResultsEl.appendChild(item);
+  }
+}
+
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function showSearchLoading() {
+  searchResultsEl.innerHTML = "";
+  const item = document.createElement("div");
+  item.className = "search-result-item search-result-loading";
+  item.textContent = "Searching...";
+  searchResultsEl.appendChild(item);
+  searchResultsEl.classList.remove("search-results-hidden");
+  searchContainer.classList.add("has-results");
+}
+
+function showSearchError(msg) {
+  searchResultsEl.innerHTML = "";
+  const item = document.createElement("div");
+  item.className = "search-result-item search-result-error";
+  item.textContent = msg;
+  searchResultsEl.appendChild(item);
+  searchResultsEl.classList.remove("search-results-hidden");
+  searchContainer.classList.add("has-results");
+}
+
+function hideSearchResults() {
+  searchResultsEl.innerHTML = "";
+  searchResultsEl.classList.add("search-results-hidden");
+  searchContainer.classList.remove("has-results");
+}
+
+async function doSearch() {
+  const query = addressSearchInput.value.trim();
+  if (!query) return;
+
+  showSearchLoading();
+  try {
+    const results = await searchAddress(query);
+    showSearchResults(results, query);
+  } catch (err) {
+    showSearchError("Search failed. Please try again.");
+    console.error("Address search error:", err);
+  }
+}
+
+searchBtn.addEventListener("click", doSearch);
+addressSearchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    doSearch();
+  }
+});
+
+addressSearchInput.addEventListener("focus", () => {
+  if (searchResultsEl.querySelector(".search-result-item")) {
+    searchContainer.classList.add("has-results");
+    searchResultsEl.classList.remove("search-results-hidden");
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!searchContainer.contains(e.target)) {
+    hideSearchResults();
+  }
+});
+
 /* ── Welcome modal ──────────────────────────────────── */
 
 const WELCOME_KEY = "wtp-welcome-dismissed";

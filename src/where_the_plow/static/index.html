@@ -74,6 +74,19 @@
     </head>
     <body>
         <div id="map"></div>
+        <div id="search-container">
+            <div id="search-input-wrap">
+                <input
+                    type="search"
+                    id="address-search"
+                    placeholder="Search address, street, drive..."
+                    autocomplete="off"
+                    enterkeyhint="search"
+                />
+                <button id="search-btn" title="Search location">&#128269;</button>
+            </div>
+            <div id="search-results" class="search-results-hidden"></div>
+        </div>
         <button id="panel-toggle" title="Toggle info panel">&#9776;</button>
         <div id="info-panel">
             <h3>where the plow</h3>
