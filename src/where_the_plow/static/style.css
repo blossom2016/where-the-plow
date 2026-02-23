@@ -468,40 +468,38 @@ body {
     color: var(--color-text-secondary);
 }
 
-/* ── Search bar ───────────────────────────────────── */
+/* ── Search (inside info-panel) ────────────────────── */
 
 #search-container {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    z-index: 10;
-    width: 280px;
-    max-width: calc(100vw - 100px);
+    position: relative;
+    margin: 6px 0 8px;
 }
 
 #search-input-wrap {
     position: relative;
 }
 
-#search-container input,
-#search-container button {
-    font-family: var(--font-sans);
-}
-
 #address-search {
     width: 100%;
-    padding: 10px 40px 10px 12px;
-    border-radius: 8px;
+    padding: 4px 28px 4px 6px;
+    border-radius: 4px;
     border: var(--border-medium);
-    background: var(--color-panel-bg);
+    background: var(--color-input-bg);
     color: var(--color-text-bright);
-    font-size: 14px;
+    font-family: var(--font-sans);
+    font-size: 12px;
     box-sizing: border-box;
-    backdrop-filter: blur(6px);
 }
 
 #address-search::placeholder {
     color: var(--color-text-muted);
+}
+
+/* hide native browser clear button on search inputs */
+#address-search::-webkit-search-cancel-button,
+#address-search::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
 }
 
 #address-search:focus {
@@ -509,37 +507,50 @@ body {
     border-color: var(--color-accent);
 }
 
-#search-container.has-results #address-search,
-#search-container:focus-within #address-search {
-    border-radius: 8px 8px 0 0;
-    border-bottom: none;
+#search-container.has-results #address-search {
+    border-radius: 4px 4px 0 0;
 }
 
-#search-btn {
+#search-icon {
     position: absolute;
     top: 50%;
-    right: 8px;
+    right: 6px;
     transform: translateY(-50%);
-    background: none;
-    border: none;
     color: var(--color-text-muted);
-    font-size: 16px;
-    cursor: pointer;
-    padding: 4px;
+    line-height: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
 }
 
-#search-btn:hover {
-    color: var(--color-text-bright);
+#search-icon svg {
+    display: block;
+}
+
+#search-icon.spinning {
+    border: 1.5px solid var(--color-text-muted);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: search-spin 0.6s linear infinite;
+}
+
+@keyframes search-spin {
+    to { transform: translateY(-50%) rotate(360deg); }
 }
 
 #search-results {
-    background: var(--color-panel-bg);
+    position: absolute;
+    width: 100%;
+    z-index: 20;
+    background: rgba(20, 20, 30, 0.97);
     border: var(--border-medium);
     border-top: none;
-    border-radius: 0 0 8px 8px;
-    max-height: 240px;
+    border-radius: 0 0 4px 4px;
+    max-height: 200px;
     overflow-y: auto;
-    backdrop-filter: blur(6px);
 }
 
 #search-results.search-results-hidden {
@@ -551,9 +562,9 @@ body {
 }
 
 .search-result-item {
-    padding: 10px 12px;
+    padding: 6px 8px;
     color: var(--color-text);
-    font-size: 13px;
+    font-size: 12px;
     cursor: pointer;
     border-bottom: var(--border-subtle);
     transition: background 0.15s;
@@ -572,12 +583,6 @@ body {
     font-weight: 500;
 }
 
-.search-result-item .search-result-addr {
-    color: var(--color-text-muted);
-    font-size: 11px;
-    margin-top: 2px;
-}
-
 .search-result-item.search-result-loading {
     cursor: default;
     color: var(--color-text-muted);
@@ -586,6 +591,22 @@ body {
 .search-result-item.search-result-error {
     cursor: default;
     color: #f87171;
+}
+
+#search-attribution {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    margin-top: 3px;
+}
+
+#search-attribution a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+}
+
+#search-attribution a:hover {
+    color: var(--color-text-secondary);
+    text-decoration: underline;
 }
 
 /* ── Mobile panel toggle ───────────────────────────── */
@@ -623,12 +644,6 @@ body {
 /* ── Responsive ────────────────────────────────────── */
 
 @media (max-width: 768px) {
-    #search-container {
-        top: 8px;
-        left: 8px;
-        width: calc(100vw - 64px);
-    }
-
     #info-panel {
         width: 220px;
         font-size: 12px;
@@ -953,6 +968,157 @@ body {
     }
 
     #welcome-modal h2 {
+        font-size: 17px;
+    }
+}
+
+/* ── Changelog modal ───────────────────────────────── */
+
+#changelog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-y: auto;
+}
+
+#changelog-overlay.hidden {
+    display: none;
+}
+
+#changelog-modal {
+    position: relative;
+    background: rgba(20, 20, 30, 0.97);
+    color: var(--color-text);
+    border-radius: 12px;
+    padding: 28px 32px;
+    max-width: 520px;
+    width: 100%;
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.6;
+    border: var(--border-strong);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+#changelog-modal h2 {
+    margin: 0 0 16px 0;
+    font-size: 20px;
+    color: var(--color-text-bright);
+}
+
+#changelog-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px;
+}
+
+#changelog-close:hover {
+    color: var(--color-text-bright);
+}
+
+/* Changelog content styling */
+
+.changelog article {
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+    border-bottom: var(--border-subtle);
+}
+
+.changelog article:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.changelog article h2 {
+    font-size: 14px;
+    margin: 0 0 8px 0;
+    color: var(--color-accent);
+}
+
+.changelog article p {
+    margin: 0 0 6px 0;
+    color: var(--color-text-secondary);
+}
+
+.changelog article p:last-child {
+    margin-bottom: 0;
+}
+
+.changelog article a {
+    color: var(--color-link);
+    text-decoration: none;
+}
+
+.changelog article a:hover {
+    color: var(--color-link-hover);
+    text-decoration: underline;
+}
+
+/* Notification dot */
+
+.has-update {
+    position: relative;
+}
+
+.has-update::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -8px;
+    width: 6px;
+    height: 6px;
+    background: var(--color-accent);
+    border-radius: 50%;
+}
+
+/* Changelog link button in About dialog */
+
+.changelog-link-btn {
+    background: none;
+    border: none;
+    color: var(--color-link);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 0;
+    margin-top: 6px;
+    display: block;
+}
+
+.changelog-link-btn:hover {
+    color: var(--color-link-hover);
+    text-decoration: underline;
+}
+
+/* ── Changelog modal mobile ────────────────────────── */
+
+@media (max-width: 768px) {
+    #changelog-overlay {
+        padding: 12px;
+    }
+
+    #changelog-modal {
+        padding: 20px 18px;
+        font-size: 12px;
+    }
+
+    #changelog-modal h2 {
         font-size: 17px;
     }
 }

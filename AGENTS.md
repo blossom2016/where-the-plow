@@ -51,3 +51,32 @@ See the existing migrations in `db.init()` for examples (e.g. `geom` on
   `ip` + `user_agent` for fingerprinting.
 - `_client_ip(request)` helper in `routes.py` extracts IP from
   `X-Forwarded-For` with fallback to `request.client.host`.
+- `README.md` documents the API endpoint table, environment variables,
+  database schema, and stack. When adding or removing endpoints, update
+  the API table in the README to match.
+
+## Changelog
+
+`CHANGELOG.md` at the project root is for **end users**, not developers.
+Write in plain English -- no file paths, no code snippets, no technical
+jargon. Each entry links to a GitHub commit range via
+`[View changes](compare URL)` so technical users can drill in.
+
+**Format:** Each entry is `## YYYY-MM-DD — Title` followed by a few
+sentences, an optional `**Contributors:**` line (only for non-Jack
+contributors), and a `[View changes]()` link. Increment the
+`<!-- changelog-id: N -->` integer at the top whenever a new entry is added.
+
+**When to update:** User-facing features, significant bug fixes, and new
+data sources warrant a changelog entry. Internal refactors, code cleanup,
+CI changes, and documentation do not.
+
+**Agent behavior:** If a change looks changelog-worthy, mention it to the
+user ("This might warrant a changelog entry") but do NOT add it
+automatically. The user decides when to batch changes into an entry,
+typically before finishing a branch. Reference GitHub issues with `(#N)`
+when relevant.
+
+**Generating HTML:** After editing `CHANGELOG.md`, run
+`uv run python cli.py changelog` to regenerate the HTML fragment. The
+Dockerfile does this automatically at build time.

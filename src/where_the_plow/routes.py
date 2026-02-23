@@ -1,12 +1,17 @@
 # src/where_the_plow/routes.py
+import asyncio
+import logging
 import time
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
+import httpx
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from where_the_plow import cache
+
+log = logging.getLogger(__name__)
 
 
 # ── Generic in-memory rate limiter ────────────────────
@@ -32,6 +37,42 @@ class RateLimiter:
 
 _signup_limiter = RateLimiter(max_hits=3, window_seconds=1800)  # 3 per 30 min
 _viewport_limiter = RateLimiter(max_hits=60, window_seconds=300)  # 60 per 5 min
+_search_limiter = RateLimiter(
+    max_hits=6, window_seconds=60
+)  # 6 searches per min per IP
+
+
+# ── Nominatim search proxy with in-memory cache ──────
+
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_USER_AGENT = (
+    "WhereThePlow/1.0 (St. John's snowplow tracker; https://plow.jackharrhy.dev)"
+)
+ST_JOHNS_VIEWBOX = "-52.85,47.45,-52.55,47.65"
+SEARCH_CACHE_TTL = 86400  # 24 hours — addresses don't change often
+SEARCH_CACHE_MAX = 500  # max entries before evicting oldest
+
+_search_cache: dict[str, tuple[float, list[dict]]] = {}  # key -> (expires_at, results)
+_nominatim_last_request: float = 0.0  # monotonic timestamp of last outbound request
+
+
+def _search_cache_get(key: str) -> list[dict] | None:
+    entry = _search_cache.get(key)
+    if entry is None:
+        return None
+    expires_at, results = entry
+    if time.monotonic() > expires_at:
+        del _search_cache[key]
+        return None
+    return results
+
+
+def _search_cache_put(key: str, results: list[dict]) -> None:
+    # Evict oldest entries if cache is full
+    if len(_search_cache) >= SEARCH_CACHE_MAX:
+        oldest_key = min(_search_cache, key=lambda k: _search_cache[k][0])
+        del _search_cache[oldest_key]
+    _search_cache[key] = (time.monotonic() + SEARCH_CACHE_TTL, results)
 
 
 def _client_ip(request: Request) -> str:
@@ -316,3 +357,109 @@ def signup(request: Request, body: SignupRequest):
         note=body.note,
     )
     return Response(status_code=204)
+
+
+@router.get(
+    "/search",
+    summary="Geocode an address via Nominatim (cached proxy)",
+    description="Proxies search queries to Nominatim with server-side caching and "
+    "rate limiting. Results are cached for 24 hours. Respects Nominatim's "
+    "usage policy (max 1 req/sec, proper User-Agent, caching).",
+    tags=["search"],
+)
+async def search_address(
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=200, description="Search query"),
+):
+    global _nominatim_last_request
+
+    ip = _client_ip(request)
+    if _search_limiter.is_limited(ip):
+        return Response(status_code=429)
+
+    cache_key = q.strip().lower()
+
+    cached = _search_cache_get(cache_key)
+    if cached is not None:
+        return JSONResponse(content=cached)
+
+    # Enforce 1 req/sec to Nominatim across all users
+    now = time.monotonic()
+    wait = 1.0 - (now - _nominatim_last_request)
+    if wait > 0:
+        await asyncio.sleep(wait)
+
+    params = {
+        "q": q.strip() + ", St. John's Newfoundland",
+        "format": "json",
+        "addressdetails": "1",
+        "limit": "5",
+        "viewbox": ST_JOHNS_VIEWBOX,
+        "bounded": "0",
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                NOMINATIM_URL,
+                params=params,
+                headers={"User-Agent": NOMINATIM_USER_AGENT},
+                timeout=10.0,
+            )
+        _nominatim_last_request = time.monotonic()
+
+        if resp.status_code != 200:
+            log.warning("Nominatim returned %s for query %r", resp.status_code, q)
+            return Response(status_code=502)
+
+        raw = resp.json()
+        results = [_format_search_result(r) for r in raw]
+        _search_cache_put(cache_key, results)
+        return JSONResponse(content=results)
+
+    except httpx.TimeoutException:
+        log.warning("Nominatim timeout for query %r", q)
+        return Response(status_code=504)
+    except Exception:
+        log.exception("Nominatim proxy error for query %r", q)
+        return Response(status_code=502)
+
+
+def _format_search_result(result: dict) -> dict:
+    """Build a clean, short label from Nominatim's structured address fields."""
+    addr = result.get("address", {})
+    lat = result.get("lat")
+    lon = result.get("lon")
+
+    parts: list[str] = []
+
+    # Primary name: building/POI name if it differs from the road
+    name = result.get("name", "")
+    road = addr.get("road", "")
+
+    # House number + road (e.g. "100 Elizabeth Avenue")
+    house = addr.get("house_number", "")
+    road_part = f"{house} {road}".strip() if house else road
+
+    if name and name != road:
+        parts.append(name)
+        if road_part:
+            parts.append(road_part)
+    elif road_part:
+        parts.append(road_part)
+
+    # Neighbourhood / quarter
+    neighbourhood = (
+        addr.get("neighbourhood") or addr.get("quarter") or addr.get("suburb")
+    )
+    if neighbourhood:
+        parts.append(neighbourhood)
+
+    # City — include it so results outside St. John's still make sense
+    city = addr.get("city") or addr.get("town") or addr.get("village")
+    if city:
+        parts.append(city)
+
+    label = ", ".join(parts) if parts else result.get("display_name", "Unknown")
+
+    return {"lat": lat, "lon": lon, "label": label}
