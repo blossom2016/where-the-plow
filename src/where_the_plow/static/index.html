@@ -231,6 +231,7 @@
                     </div>
                 </div>
             </div>
+            <div id="kofi-container"></div>
             <div id="panel-footer">
                 Data from
                 <a
@@ -433,6 +434,11 @@
                 <div id="changelog-content">Loading...</div>
             </div>
         </div>
+        <script src="https://storage.ko-fi.com/cdn/widget/Widget_2.js"></script>
+        <script>
+            kofiwidget2.init('Support me on Ko-fi', '#4d0e0e', 'N4N0OLPJS');
+            document.getElementById('kofi-container').innerHTML = kofiwidget2.getHTML();
+        </script>
         <script src="/static/app.js"></script>
     </body>
 </html>

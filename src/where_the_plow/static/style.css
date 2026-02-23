@@ -353,6 +353,19 @@ body {
     display: none;
 }
 
+/* ── Ko-fi widget ──────────────────────────────────── */
+
+#kofi-container {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: var(--border-subtle);
+    text-align: center;
+}
+
+#kofi-container .btn-container {
+    display: inline-block !important;
+}
+
 /* ── Panel footer ──────────────────────────────────── */
 
 #panel-footer {

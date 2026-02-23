@@ -1,5 +1,11 @@
-<!-- changelog-id: 6 -->
+<!-- changelog-id: 7 -->
 # Changelog
+
+## 2026-02-23 — Ko-fi Support Button
+A "Support me on Ko-fi" button now appears in the sidebar, if you'd like to
+help keep the servers running.
+
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/05efafa...5184464)
 
 ## 2026-02-23 — Multi-Source Tracking
 The map now tracks plows from Mount Pearl and the Provincial fleet alongside
