@@ -8,6 +8,8 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 COPY src/ src/
+COPY CHANGELOG.md cli.py ./
+RUN uv run python cli.py changelog
 
 EXPOSE 8000
 

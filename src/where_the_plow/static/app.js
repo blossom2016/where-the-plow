@@ -1,30 +1,31 @@
-/* ── Address search ──────────────────────────────────── */
-
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
-const ST_JOHNS_VIEWBOX = "-52.85,47.45,-52.55,47.65"; // minlon,minlat,maxlon,maxlat
+/* ── Address search (server-proxied Nominatim) ──────── */
 
 const addressSearchInput = document.getElementById("address-search");
-const searchBtn = document.getElementById("search-btn");
+const searchIconEl = document.getElementById("search-icon");
 const searchResultsEl = document.getElementById("search-results");
 const searchContainer = document.getElementById("search-container");
 
-async function searchAddress(query) {
+let searchAbort = null;
+
+const SEARCH_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="7.5"/><line x1="16" y1="16" x2="22" y2="22"/></svg>';
+
+function setSearchSpinner(on) {
+  if (on) {
+    searchIconEl.innerHTML = "";
+    searchIconEl.classList.add("spinning");
+  } else {
+    searchIconEl.innerHTML = SEARCH_SVG;
+    searchIconEl.classList.remove("spinning");
+  }
+}
+
+async function searchAddress(query, signal) {
   const q = query.trim();
   if (!q) return [];
 
-  const params = new URLSearchParams({
-    q: q + ", St. John's Newfoundland",
-    format: "json",
-    limit: "5",
-    viewbox: ST_JOHNS_VIEWBOX,
-    bounded: "0",
-  });
-
-  const resp = await fetch(`${NOMINATIM_URL}?${params}`, {
-    headers: {
-      "User-Agent": "WhereThePlow/1.0 (St. John's snowplow tracker; https://plow.jackharrhy.dev)",
-    },
-  });
+  const params = new URLSearchParams({ q });
+  const resp = await fetch(`/search?${params}`, { signal });
+  if (resp.status === 429) throw new Error("Too many searches. Please wait a moment.");
   if (!resp.ok) throw new Error("Search failed");
   return resp.json();
 }
@@ -47,16 +48,15 @@ function showSearchResults(results, query) {
     item.className = "search-result-item";
     item.dataset.lon = r.lon;
     item.dataset.lat = r.lat;
-    item.dataset.display = r.display_name;
     item.innerHTML =
       '<span class="search-result-name">' +
-      escapeHtml(r.display_name) +
+      escapeHtml(r.label) +
       "</span>";
     item.addEventListener("click", () => {
       const lon = parseFloat(item.dataset.lon);
       const lat = parseFloat(item.dataset.lat);
       plowMap.map.flyTo({ center: [lon, lat], zoom: 17, duration: 1000 });
-      addressSearchInput.value = item.dataset.display;
+      addressSearchInput.value = "";
       hideSearchResults();
       addressSearchInput.blur();
       gtag("event", "address_search", { query: query.trim() });
@@ -71,15 +71,6 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
-function showSearchLoading() {
-  searchResultsEl.innerHTML = "";
-  const item = document.createElement("div");
-  item.className = "search-result-item search-result-loading";
-  item.textContent = "Searching...";
-  searchResultsEl.appendChild(item);
-  searchResultsEl.classList.remove("search-results-hidden");
-  searchContainer.classList.add("has-results");
-}
 
 function showSearchError(msg) {
   searchResultsEl.innerHTML = "";
@@ -101,21 +92,31 @@ async function doSearch() {
   const query = addressSearchInput.value.trim();
   if (!query) return;
 
-  showSearchLoading();
+  if (searchAbort) { searchAbort.abort(); searchAbort = null; }
+  setSearchSpinner(true);
+
+  searchAbort = new AbortController();
   try {
-    const results = await searchAddress(query);
+    const results = await searchAddress(query, searchAbort.signal);
     showSearchResults(results, query);
   } catch (err) {
-    showSearchError("Search failed. Please try again.");
+    if (err.name === "AbortError") return;
+    showSearchError(err.message || "Search failed. Please try again.");
     console.error("Address search error:", err);
+  } finally {
+    searchAbort = null;
+    setSearchSpinner(false);
   }
 }
 
-searchBtn.addEventListener("click", doSearch);
 addressSearchInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     doSearch();
+  } else if (e.key === "Escape") {
+    if (searchAbort) { searchAbort.abort(); searchAbort = null; }
+    hideSearchResults();
+    addressSearchInput.blur();
   }
 });
 
@@ -249,6 +250,77 @@ signupSubmitBtn.addEventListener("click", async () => {
 btnViewInfo.addEventListener("click", (e) => {
   e.preventDefault();
   showWelcome();
+});
+
+/* ── Changelog modal ───────────────────────────────── */
+
+const CHANGELOG_KEY = "wtp-changelog-seen";
+const changelogOverlay = document.getElementById("changelog-overlay");
+const changelogModal = document.getElementById("changelog-modal");
+const changelogCloseBtn = document.getElementById("changelog-close");
+const changelogContent = document.getElementById("changelog-content");
+const btnViewChangelog = document.getElementById("btn-view-changelog");
+const btnAboutChangelog = document.getElementById("btn-about-changelog");
+
+let changelogHtml = null;
+let changelogId = null;
+
+async function loadChangelog() {
+  if (changelogHtml !== null) return;
+  try {
+    const resp = await fetch("/static/changelog.html");
+    if (!resp.ok) {
+      changelogHtml = "<p>Changelog unavailable.</p>";
+      return;
+    }
+    const html = await resp.text();
+    const match = html.match(/data-changelog-id="(\d+)"/);
+    changelogId = match ? parseInt(match[1]) : null;
+    changelogHtml = html;
+    checkChangelogUpdate();
+  } catch {
+    changelogHtml = "<p>Changelog unavailable.</p>";
+  }
+}
+
+function checkChangelogUpdate() {
+  if (changelogId === null) return;
+  const seen = parseInt(localStorage.getItem(CHANGELOG_KEY) || "0");
+  if (changelogId > seen) {
+    btnViewChangelog.classList.add("has-update");
+  }
+}
+
+function showChangelog() {
+  changelogContent.innerHTML = changelogHtml || "<p>Loading...</p>";
+  changelogOverlay.classList.remove("hidden");
+  if (changelogId !== null) {
+    localStorage.setItem(CHANGELOG_KEY, String(changelogId));
+    btnViewChangelog.classList.remove("has-update");
+  }
+}
+
+function hideChangelog() {
+  changelogOverlay.classList.add("hidden");
+}
+
+// Load changelog eagerly on page load
+loadChangelog();
+
+btnViewChangelog.addEventListener("click", (e) => {
+  e.preventDefault();
+  showChangelog();
+});
+
+btnAboutChangelog.addEventListener("click", () => {
+  hideWelcome();
+  showChangelog();
+});
+
+changelogCloseBtn.addEventListener("click", hideChangelog);
+
+changelogOverlay.addEventListener("click", (e) => {
+  if (e.target === changelogOverlay) hideChangelog();
 });
 
 /* ── Panel toggle (mobile) ──────────────────────────── */

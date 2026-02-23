@@ -74,22 +74,23 @@
     </head>
     <body>
         <div id="map"></div>
-        <div id="search-container">
-            <div id="search-input-wrap">
-                <input
-                    type="search"
-                    id="address-search"
-                    placeholder="Search address, street, drive..."
-                    autocomplete="off"
-                    enterkeyhint="search"
-                />
-                <button id="search-btn" title="Search location">&#128269;</button>
-            </div>
-            <div id="search-results" class="search-results-hidden"></div>
-        </div>
         <button id="panel-toggle" title="Toggle info panel">&#9776;</button>
         <div id="info-panel">
             <h3>where the plow</h3>
+            <div id="search-container">
+                <div id="search-input-wrap">
+                    <input
+                        type="search"
+                        id="address-search"
+                        placeholder="Search address... (Enter)"
+                        autocomplete="off"
+                        enterkeyhint="search"
+                    />
+                    <span id="search-icon" title="Search"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="7.5"/><line x1="16" y1="16" x2="22" y2="22"/></svg></span>
+                </div>
+                <div id="search-results" class="search-results-hidden"></div>
+                <div id="search-attribution">Powered by <a href="https://nominatim.openstreetmap.org" target="_blank" rel="noopener">Nominatim</a> &middot; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">ODbL</a></div>
+            </div>
             <div id="mode-toggle" class="toggle-group">
                 <button id="btn-realtime" class="active">Realtime</button>
                 <button id="btn-coverage">Coverage</button>
@@ -243,6 +244,8 @@
                 <a href="/docs">API Docs</a>
                 &middot;
                 <a href="#" id="btn-view-info">About</a>
+                &middot;
+                <a href="#" id="btn-view-changelog">Changelog</a>
             </div>
         </div>
         <!-- Welcome modal -->
@@ -338,6 +341,7 @@
                             >GitHub</a
                         >.
                     </p>
+                    <button id="btn-about-changelog" class="changelog-link-btn">View Changelog</button>
                 </div>
 
                 <button id="welcome-cta" class="welcome-cta-btn">
@@ -398,6 +402,14 @@
                 <button id="welcome-dismiss" class="welcome-dismiss-btn">
                     Got it, show me the map
                 </button>
+            </div>
+        </div>
+        <!-- Changelog modal -->
+        <div id="changelog-overlay" class="hidden">
+            <div id="changelog-modal">
+                <button id="changelog-close" title="Close">&times;</button>
+                <h2>What's New</h2>
+                <div id="changelog-content">Loading...</div>
             </div>
         </div>
         <script src="/static/app.js"></script>
