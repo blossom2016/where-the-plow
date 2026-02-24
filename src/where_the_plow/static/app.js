@@ -333,6 +333,20 @@ panelToggle.addEventListener("click", () => {
   panelToggle.textContent = isOpen ? "\u2715" : "\u2630";
 });
 
+/* ── Move map controls when panel is tall ──────────── */
+
+function updateControlPosition() {
+  const panel = document.getElementById("info-panel");
+  const panelHeight = panel.offsetHeight;
+  const viewportHeight = window.innerHeight;
+  // If panel uses >=70% of viewport height, shift controls left
+  document.body.classList.toggle("controls-left", panelHeight >= viewportHeight * 0.7);
+}
+
+const _panelObserver = new ResizeObserver(updateControlPosition);
+_panelObserver.observe(document.getElementById("info-panel"));
+window.addEventListener("resize", updateControlPosition);
+
 /* ── PlowMap class ─────────────────────────────────── */
 
 class PlowMap {

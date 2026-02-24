@@ -43,6 +43,18 @@ body {
     height: 100%;
 }
 
+/* ── Map controls: shift left when panel is tall ───── */
+
+body.controls-left .maplibregl-ctrl-bottom-right {
+    left: 0;
+    right: auto;
+}
+
+body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+    float: left;
+    margin: 0 0 10px 10px;
+}
+
 /* ── Info panel ────────────────────────────────────── */
 
 #info-panel {
