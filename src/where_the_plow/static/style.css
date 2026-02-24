@@ -733,6 +733,8 @@ body {
         padding: 12px 14px;
         top: 8px;
         right: 8px;
+        max-height: calc(100vh - 16px);
+        overflow-y: auto;
     }
 
     #info-panel h3 {
@@ -754,6 +756,17 @@ body {
 
     #info-panel.open {
         display: block;
+    }
+
+    /* Move map controls to the left so they don't sit behind the panel */
+    .maplibregl-ctrl-bottom-right {
+        left: 0;
+        right: auto;
+    }
+
+    .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+        float: left;
+        margin: 0 0 10px 10px;
     }
 }
 
