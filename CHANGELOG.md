@@ -1,7 +1,7 @@
 <!-- changelog-id: 8 -->
 # Changelog
 
-## 2026-02-24 — Stale Data Indicators
+## 2026-02-24 - Stale Data Indicators
 The St. John's data source is currently experiencing technical difficulties on
 the city's end. To make situations like this visible, the map now shows an
 orange warning icon next to any source that hasn't received fresh data in a
@@ -11,13 +11,13 @@ only shows what's actually moving.
 
 [View changes](https://github.com/jackharrhy/where-the-plow/compare/e32ec39...ff2cbce)
 
-## 2026-02-23 — Ko-fi Support Button
+## 2026-02-23 - Ko-fi Support Button
 A "Support me on Ko-fi" button now appears in the sidebar, if you'd like to
 help keep the servers running.
 
 [View changes](https://github.com/jackharrhy/where-the-plow/compare/05efafa...07a2b6b)
 
-## 2026-02-23 — Multi-Source Tracking
+## 2026-02-23 - Multi-Source Tracking
 The map now tracks plows from Mount Pearl and the Provincial fleet alongside
 St. John's. Toggle sources on and off from the legend, or zoom into a specific
 city. Coverage playback is significantly faster.
