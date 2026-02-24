@@ -936,9 +936,8 @@ function updateVehicleCount(data) {
     .then((r) => r.json())
     .then((stats) => {
       if (stats.db_size_bytes) {
-        const el = document.getElementById("db-size");
-        el.textContent = formatBytes(stats.db_size_bytes) + " of data";
-        el.style.display = "";
+        document.getElementById("db-size").textContent =
+          formatBytes(stats.db_size_bytes) + " of data";
       }
     })
     .catch(() => {});
@@ -1554,7 +1553,7 @@ class PlowApp {
     this.map.setVehiclesVisible(false);
     this.map.setMiniTrailsVisible(false);
     document.getElementById("vehicle-count").style.display = "none";
-    document.getElementById("db-size").style.display = "none";
+    document.getElementById("db-size").style.display = "";
     vehicleHint.style.display = "none";
     coveragePanelEl.style.display = "block";
     this.updatePlaybackAvailability();
