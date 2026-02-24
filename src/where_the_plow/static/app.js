@@ -922,8 +922,9 @@ function updateVehicleCount(data) {
     .then((r) => r.json())
     .then((stats) => {
       if (stats.db_size_bytes) {
-        document.getElementById("db-size").textContent =
-          formatBytes(stats.db_size_bytes) + " of data";
+        const el = document.getElementById("db-size");
+        el.textContent = formatBytes(stats.db_size_bytes) + " of data";
+        el.style.display = "";
       }
     })
     .catch(() => {});
