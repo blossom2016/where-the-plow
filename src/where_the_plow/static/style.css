@@ -71,6 +71,9 @@ body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
     z-index: 10;
     width: 260px;
     backdrop-filter: blur(6px);
+    max-height: calc(100vh - 12px - 12px);
+    overflow-y: auto;
+    box-sizing: border-box;
 }
 
 #info-panel h3 {
@@ -745,8 +748,6 @@ body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
         padding: 12px 14px;
         top: 8px;
         right: 8px;
-        max-height: calc(100vh - 16px);
-        overflow-y: auto;
     }
 
     #info-panel h3 {
