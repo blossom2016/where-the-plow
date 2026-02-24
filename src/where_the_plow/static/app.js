@@ -1773,8 +1773,8 @@ class PlowApp {
   showDetail(p) {
     detailName.textContent = p.description;
     detailType.textContent = p.vehicle_type;
-    detailSpeed.textContent = "Speed: " + p.speed + " km/h";
-    detailBearing.textContent = "Bearing: " + p.bearing + "\u00B0";
+    detailSpeed.textContent = p.speed != null ? "Speed: " + p.speed + " km/h" : "Speed: N/A";
+    detailBearing.textContent = p.bearing != null ? "Bearing: " + p.bearing + "\u00B0" : "Bearing: N/A";
     detailUpdated.textContent = "Updated: " + formatTimestamp(p.timestamp);
     detailSource.textContent = "Source: " + this.getSourceDisplayName(p.source);
     vehicleHint.style.display = "none";
