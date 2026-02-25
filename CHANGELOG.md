@@ -1,7 +1,16 @@
-<!-- changelog-id: 9 -->
+<!-- changelog-id: 10 -->
 # Changelog
 
-## 2026-02-24 — Faster Coverage Rendering
+## 2026-02-25 - St. John's Data Restored
+The city added authentication to their plow tracking service, which broke our
+data feed. We've worked around it by scraping the token from the city's own
+public-facing map page and using that to authenticate. A great use of tax
+payers' dollars putting a login wall in front of a handful of snowplow GPS
+dots, but we're back in business.
+
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/58db35a...HEAD)
+
+## 2026-02-24 - Faster Coverage Rendering
 Coverage playback and the heatmap view are now powered by [deck.gl](https://deck.gl), a GPU-accelerated visualization library. Time-lapse playback is noticeably smoother — the map no longer rebuilds thousands of line segments every frame, it just tells the GPU what time it is. Coverage lines now have rounded caps and a fade trail. Most importantly, **playback now works with all sources enabled** instead of requiring you to select a single source first.
 
 [View changes](https://github.com/jackharrhy/where-the-plow/compare/ff2cbce...58db35a)

@@ -16,12 +16,10 @@ SAMPLE_AVL_RESPONSE = {
     "features": [
         {
             "attributes": {
-                "ID": "v1",
-                "Description": "2222 SA PLOW TRUCK",
+                "OBJECTID": 6819,
                 "VehicleType": "SA PLOW TRUCK",
                 "LocationDateTime": 1771491812000,
                 "Bearing": 135,
-                "Speed": "13.4",
                 "isDriving": "maybe",
             },
             "geometry": {"x": -52.731, "y": 47.564},
@@ -57,7 +55,7 @@ def test_process_poll_avl():
     inserted = process_poll(db, SAMPLE_AVL_RESPONSE, source="st_johns", parser="avl")
     assert inserted == 1
     row = db.conn.execute(
-        "SELECT source FROM positions WHERE vehicle_id='v1'"
+        "SELECT source FROM positions WHERE vehicle_id='6819'"
     ).fetchone()
     assert row[0] == "st_johns"
     db.close()
@@ -339,8 +337,8 @@ async def test_fetch_source_raises_on_http_error():
         await fetch_source(client, config)
 
 
-async def test_fetch_source_avl_sends_referer():
-    """AVL sources should send the Referer header."""
+async def test_fetch_source_avl_sends_referer_and_token():
+    """AVL sources should send the Referer header and token param."""
     config = _test_source_config(
         parser="avl",
         api_url="https://map.stjohns.ca/arcgis/rest/services/test",
@@ -355,9 +353,16 @@ async def test_fetch_source_avl_sends_referer():
     client = AsyncMock(spec=httpx.AsyncClient)
     client.get = AsyncMock(return_value=mock_response)
 
-    result = await fetch_source(client, config)
+    with patch(
+        "where_the_plow.client.avl_token_manager.get_token",
+        new_callable=AsyncMock,
+        return_value="fake-token-123",
+    ):
+        result = await fetch_source(client, config)
 
     # Verify Referer was sent
     call_kwargs = client.get.call_args
     assert call_kwargs.kwargs["headers"]["Referer"] == "https://map.stjohns.ca/avl/"
+    # Verify token was included in params
+    assert call_kwargs.kwargs["params"]["token"] == "fake-token-123"
     assert result == {"features": []}
