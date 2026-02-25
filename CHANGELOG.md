@@ -1,7 +1,15 @@
-<!-- changelog-id: 10 -->
+<!-- changelog-id: 11 -->
 # Changelog
 
-## 2026-02-25 - St. John's Data Restored
+## 2026-02-25 — St. John's Data Restored (Again)
+The city rebuilt their plow tracking page, which broke our data feed for the
+second time today. We lost about two hours of data, but we're back again. The
+new page no longer exposes an API token at all, so we've switched to using the
+city's portal proxy instead.
+
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/5dc3f4b...HEAD)
+
+## 2026-02-25 — St. John's Data Restored
 The city added authentication to their plow tracking service, which broke our
 data feed. We've worked around it by scraping the token from the city's own
 public-facing map page and using that to authenticate. A great use of tax

@@ -1,5 +1,4 @@
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -11,58 +10,6 @@ logger = logging.getLogger(__name__)
 # Newfoundland Standard Time (UTC-3:30) but are encoded as if they were UTC.
 # To get the real UTC time we must add the 3:30 offset back.
 _NST_CORRECTION = timedelta(hours=3, minutes=30)
-
-# The AVL page embeds an ArcGIS API key via esriId.registerToken().
-# We scrape it and cache it; the page is public so this is stable.
-_AVL_TOKEN_PAGE = "https://map.stjohns.ca/avl/"
-_AVL_TOKEN_RE = re.compile(r'token:\s*"(AAPT[^"]+)"')
-_AVL_TOKEN_TTL = timedelta(hours=1)
-
-
-class AvlTokenManager:
-    """Scrapes and caches the ArcGIS API token from the public AVL page."""
-
-    def __init__(self):
-        self._token: str | None = None
-        self._fetched_at: datetime | None = None
-
-    @property
-    def _expired(self) -> bool:
-        if self._token is None or self._fetched_at is None:
-            return True
-        return datetime.now(timezone.utc) - self._fetched_at > _AVL_TOKEN_TTL
-
-    async def get_token(self, client: httpx.AsyncClient) -> str:
-        """Return a cached token, refreshing from the AVL page if stale."""
-        if not self._expired:
-            return self._token  # type: ignore[return-value]
-        return await self._refresh(client)
-
-    async def invalidate_and_refresh(self, client: httpx.AsyncClient) -> str:
-        """Force a fresh token fetch (e.g. after a 499 Token Required)."""
-        self._token = None
-        self._fetched_at = None
-        return await self._refresh(client)
-
-    async def _refresh(self, client: httpx.AsyncClient) -> str:
-        logger.info("Fetching AVL token from %s", _AVL_TOKEN_PAGE)
-        resp = await client.get(_AVL_TOKEN_PAGE, follow_redirects=True, timeout=15)
-        resp.raise_for_status()
-        match = _AVL_TOKEN_RE.search(resp.text)
-        if not match:
-            raise RuntimeError(
-                "Could not extract ArcGIS token from AVL page — "
-                "the page format may have changed"
-            )
-        token = match.group(1)
-        self._token = token
-        self._fetched_at = datetime.now(timezone.utc)
-        logger.info("AVL token refreshed (%d chars)", len(token))
-        return token
-
-
-# Module-level singleton so all AVL poll loops share one cached token.
-avl_token_manager = AvlTokenManager()
 
 
 # ── AVL (St. John's) response models ────────────────────────────────
@@ -232,14 +179,15 @@ async def fetch_source(client: httpx.AsyncClient, source) -> dict | list:
     params = {}
 
     if source.parser == "avl":
-        token = await avl_token_manager.get_token(client)
+        # The AVL data is served through an ArcGIS Enterprise portal proxy
+        # that handles authentication server-side.  No API token is needed;
+        # only the Referer header must match the public AVL page.
         params = {
             "f": "json",
             "outFields": "*",
             "outSR": "4326",
             "returnGeometry": "true",
             "where": "1=1",
-            "token": token,
         }
         if source.referer:
             headers["Referer"] = source.referer
@@ -247,18 +195,5 @@ async def fetch_source(client: httpx.AsyncClient, source) -> dict | list:
     resp = await client.get(source.api_url, params=params, headers=headers, timeout=10)
     resp.raise_for_status()
     data = resp.json()
-
-    # ArcGIS returns 200 with an error body when the token is bad/expired.
-    if isinstance(data, dict) and "error" in data:
-        code = data["error"].get("code")
-        if code in (498, 499):
-            logger.warning("AVL token rejected (code %s), refreshing", code)
-            token = await avl_token_manager.invalidate_and_refresh(client)
-            params["token"] = token
-            resp = await client.get(
-                source.api_url, params=params, headers=headers, timeout=10
-            )
-            resp.raise_for_status()
-            data = resp.json()
 
     return data

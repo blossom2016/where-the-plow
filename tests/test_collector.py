@@ -337,11 +337,11 @@ async def test_fetch_source_raises_on_http_error():
         await fetch_source(client, config)
 
 
-async def test_fetch_source_avl_sends_referer_and_token():
-    """AVL sources should send the Referer header and token param."""
+async def test_fetch_source_avl_sends_referer():
+    """AVL sources should send the Referer header (no token needed — portal proxy)."""
     config = _test_source_config(
         parser="avl",
-        api_url="https://map.stjohns.ca/arcgis/rest/services/test",
+        api_url="https://map.stjohns.ca/portal/sharing/servers/abc/rest/services/AVL/MapServer/0/query",
         referer="https://map.stjohns.ca/avl/",
     )
 
@@ -353,16 +353,11 @@ async def test_fetch_source_avl_sends_referer_and_token():
     client = AsyncMock(spec=httpx.AsyncClient)
     client.get = AsyncMock(return_value=mock_response)
 
-    with patch(
-        "where_the_plow.client.avl_token_manager.get_token",
-        new_callable=AsyncMock,
-        return_value="fake-token-123",
-    ):
-        result = await fetch_source(client, config)
+    result = await fetch_source(client, config)
 
     # Verify Referer was sent
     call_kwargs = client.get.call_args
     assert call_kwargs.kwargs["headers"]["Referer"] == "https://map.stjohns.ca/avl/"
-    # Verify token was included in params
-    assert call_kwargs.kwargs["params"]["token"] == "fake-token-123"
+    # No token should be present in params
+    assert "token" not in call_kwargs.kwargs["params"]
     assert result == {"features": []}
