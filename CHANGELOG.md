@@ -8,7 +8,7 @@ public-facing map page and using that to authenticate. A great use of tax
 payers' dollars putting a login wall in front of a handful of snowplow GPS
 dots, but we're back in business.
 
-[View changes](https://github.com/jackharrhy/where-the-plow/compare/58db35a...HEAD)
+[View changes](https://github.com/jackharrhy/where-the-plow/compare/c5a1ccb...5dc3f4b)
 
 ## 2026-02-24 - Faster Coverage Rendering
 Coverage playback and the heatmap view are now powered by [deck.gl](https://deck.gl), a GPU-accelerated visualization library. Time-lapse playback is noticeably smoother — the map no longer rebuilds thousands of line segments every frame, it just tells the GPU what time it is. Coverage lines now have rounded caps and a fade trail. Most importantly, **playback now works with all sources enabled** instead of requiring you to select a single source first.
