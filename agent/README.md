@@ -17,7 +17,7 @@ Your credentials are stored locally and reused on subsequent runs. The agent use
 
 ## Quick start (recommended)
 
-Download the latest release for your platform, then just run it:
+[Download the latest release](https://github.com/jackharrhy/where-the-plow/releases) for your platform, then just run it:
 
 ```
 ./plow-agent
