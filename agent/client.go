@@ -19,8 +19,10 @@ type Schedule struct {
 	Headers         map[string]string `json:"headers"`
 }
 
-// register sends a POST /agents/register request to the server.
-func register(cfg *Config) {
+// tryRegister sends a POST /agents/register request to the server.
+// Registration is idempotent — if the agent is already known the server
+// returns the current status. Returns nil on success.
+func tryRegister(cfg *Config) error {
 	hostname, _ := os.Hostname()
 	systemInfo := fmt.Sprintf("%s/%s %s", runtime.GOOS, runtime.GOARCH, hostname)
 
@@ -31,19 +33,19 @@ func register(cfg *Config) {
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		log.Fatalf("Failed to marshal register payload: %v", err)
+		return fmt.Errorf("marshal register payload: %w", err)
 	}
 
 	url := cfg.server + "/agents/register"
 	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		log.Fatalf("Registration failed: %v", err)
+		return fmt.Errorf("register request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		log.Fatalf("Registration failed (HTTP %d): %s", resp.StatusCode, respBody)
+		return fmt.Errorf("register HTTP %d: %s", resp.StatusCode, respBody)
 	}
 
 	var result struct {
@@ -51,12 +53,18 @@ func register(cfg *Config) {
 		Status  string `json:"status"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		log.Fatalf("Failed to parse register response: %v", err)
+		return fmt.Errorf("parse register response: %w", err)
 	}
 
-	log.Printf("Registered! Agent ID: %s, Status: %s", result.AgentID, result.Status)
-	if result.Status == "pending" {
-		log.Printf("Waiting for approval...")
+	log.Printf("Registered: agent_id=%s status=%s", result.AgentID, result.Status)
+	return nil
+}
+
+// register calls tryRegister and fatals on error. Used by the interactive
+// wizard where failure should be immediately visible.
+func register(cfg *Config) {
+	if err := tryRegister(cfg); err != nil {
+		log.Fatalf("Registration failed: %v", err)
 	}
 }
 

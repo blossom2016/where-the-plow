@@ -33,7 +33,9 @@ This launches an interactive setup wizard that:
 
 After setup, the agent runs in the background and survives reboots. You don't need to keep a terminal open.
 
-**Note:** Installing a system service usually requires administrator/root privileges. On Linux, run with `sudo`. On macOS, you may get a permissions prompt. On Windows, run as Administrator.
+**Note:** Installing a system service requires administrator/root privileges. The wizard will prompt for your sudo password automatically. On Windows, run as Administrator.
+
+**Once you see "Registered" in the output, let Jack know** (message him or open an issue) so he can approve your agent. It won't start fetching data until approved.
 
 ## Running interactively
 
@@ -50,35 +52,86 @@ This runs the agent in the foreground. Press Ctrl+C to stop.
 Once installed, you can control the service with:
 
 ```
-plow-agent --service status      # Check if running
+plow-agent --service status      # Check if running + platform info
+plow-agent --service logs        # View live logs (auto-detects platform)
 plow-agent --service stop        # Stop the service
 plow-agent --service start       # Start the service
 plow-agent --service restart     # Restart the service
 plow-agent --service uninstall   # Remove the service
 ```
 
-### Viewing logs
+The `status` and `logs` commands automatically detect your platform and show the right information -- no need to remember platform-specific log commands.
 
-- **Linux (systemd):** `journalctl -u plow-agent -f`
-- **macOS (launchd):** `log show --predicate 'process == "plow-agent"' --last 1h`
-- **Windows:** Event Viewer > Application logs
+### Complete removal
 
-## Docker
+To fully uninstall the agent and clean up all its data:
 
+```bash
+# 1. Stop and remove the system service
+plow-agent --service uninstall
+
+# 2. Remove service data (credentials used by the daemon)
+sudo rm -rf /var/lib/plow-agent
+
+# 3. Remove your local config (keypair and name)
+rm -rf ~/.config/plow-agent
+
+# 4. Remove the binary itself
+rm plow-agent
 ```
+
+On macOS, if the service is stuck, you can force-remove it:
+
+```bash
+sudo launchctl bootout system/plow-agent
+sudo rm /Library/LaunchDaemons/plow-agent.plist
+```
+
+## Docker / Docker Compose
+
+The agent Docker image is published to `ghcr.io/jackharrhy/plow-agent` automatically on every release.
+
+The easiest way to run it is with the included [`compose.yml`](compose.yml):
+
+1. Download it: `curl -O https://raw.githubusercontent.com/jackharrhy/where-the-plow/main/agent/compose.yml`
+2. Edit `PLOW_NAME` to something that identifies you (e.g. "alice-homelab")
+3. Run it:
+
+```bash
+docker compose up -d
+```
+
+That's it. The volume keeps your keypair across restarts. Let Jack know once it's running so he can approve your agent.
+
+To view logs:
+
+```bash
+docker compose logs -f
+```
+
+To stop and remove:
+
+```bash
+docker compose down
+docker volume rm plow-agent_plow-agent-data  # removes credentials
+```
+
+### Docker run (without Compose)
+
+```bash
 docker run -d \
   --name plow-agent \
+  --restart unless-stopped \
   -e PLOW_SERVER=https://plow.jackharrhy.dev \
   -e PLOW_NAME=your-name-here \
+  -e PLOW_DATA_DIR=/data \
   -v plow-agent-data:/data \
   ghcr.io/jackharrhy/plow-agent:latest
 ```
 
-The volume keeps your keypair across container restarts. Set `PLOW_NAME` to something that identifies you -- the server operator sees this when approving agents.
+### Building locally
 
-To build the image yourself:
-
-```
+```bash
 docker build -t plow-agent agent/
 ```
 
@@ -98,18 +151,22 @@ This creates a small PVC for key persistence and a Deployment running the agent.
 |---|---|---|
 | `--server` / `PLOW_SERVER` | Yes (for `--run`) | Plow server URL |
 | `--run` | No | Run in foreground instead of installing as service |
-| `--service <action>` | No | Control installed service: install, uninstall, start, stop, restart, status |
+| `--service <action>` | No | Control installed service: install, uninstall, start, stop, restart, status, logs |
 | `PLOW_NAME` | Docker/K8s only | Agent name (binary prompts interactively) |
 | `PLOW_DATA_DIR` | No | Override config directory (default: `~/.config/plow-agent/`, or `/data` when set) |
 
-## What gets stored locally
+## What gets stored
 
-The agent saves two files in its config directory:
+The agent stores two files:
 
 - `key.pem` -- your ECDSA private key (never sent to the server, only used to sign requests)
 - `name` -- the name you chose for this agent
 
-On a binary install these live in `~/.config/plow-agent/`. In Docker/K8s they live in the `/data` volume.
+**Interactive / `--run` mode:** stored in `~/.config/plow-agent/`
+
+**System service:** stored in `/var/lib/plow-agent/` (copied there during install so the daemon can access them as root)
+
+**Docker/K8s:** stored in the `/data` volume
 
 ## Checking your status
 
@@ -117,12 +174,11 @@ The agent logs its current status on startup and during operation:
 
 ```
 2026/02/25 14:30:00 Agent ID: a1b2c3d4e5f67890
-2026/02/25 14:30:00 Server: https://plow.jackharrhy.dev
-2026/02/25 14:30:01 Registered! Waiting for approval...
+2026/02/25 14:30:01 Registered: agent_id=a1b2c3d4e5f67890 status=pending
 2026/02/25 14:30:01 Status: pending — waiting for approval (checking every 30s)
 ```
 
-Once approved:
+Once Jack approves your agent:
 
 ```
 2026/02/25 14:35:01 Approved! Fetching every 18s (offset 6s)
