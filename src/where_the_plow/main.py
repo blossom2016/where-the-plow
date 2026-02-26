@@ -1,11 +1,12 @@
 # src/where_the_plow/main.py
 import asyncio
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from where_the_plow import collector
@@ -56,9 +57,28 @@ STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+def _file_hash(path: Path) -> str:
+    """Return first 12 chars of the MD5 hex digest of a file's contents."""
+    return hashlib.md5(path.read_bytes()).hexdigest()[:12]
+
+
+def _build_index_html() -> str:
+    """Read index.html and append ?v=<hash> to local static asset references."""
+    html = (STATIC_DIR / "index.html").read_text()
+    for filename in ("style.css", "app.js"):
+        asset_path = STATIC_DIR / filename
+        if asset_path.exists():
+            h = _file_hash(asset_path)
+            html = html.replace(f"/static/{filename}", f"/static/{filename}?v={h}")
+    return html
+
+
+_INDEX_HTML = _build_index_html()
+
+
 @app.get("/", include_in_schema=False)
 def root():
-    return FileResponse(str(STATIC_DIR / "index.html"))
+    return HTMLResponse(_INDEX_HTML)
 
 
 @app.get("/health", tags=["system"])

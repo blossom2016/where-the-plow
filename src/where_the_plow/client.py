@@ -1,8 +1,10 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from pydantic import BaseModel, field_validator
 
-from where_the_plow.config import settings
+logger = logging.getLogger(__name__)
 
 # The AVL API returns epoch-millisecond timestamps that represent
 # Newfoundland Standard Time (UTC-3:30) but are encoded as if they were UTC.
@@ -10,61 +12,363 @@ from where_the_plow.config import settings
 _NST_CORRECTION = timedelta(hours=3, minutes=30)
 
 
-def parse_avl_response(data: dict) -> tuple[list[dict], list[dict]]:
+# ── AVL (St. John's) response models ────────────────────────────────
+
+
+class AvlGeometry(BaseModel):
+    x: float = 0.0
+    y: float = 0.0
+
+
+class AvlAttributes(BaseModel):
+    OBJECTID: int
+    VehicleType: str = ""
+    LocationDateTime: int
+    Bearing: int = 0
+    isDriving: str = ""
+
+
+class AvlFeature(BaseModel):
+    attributes: AvlAttributes
+    geometry: AvlGeometry = AvlGeometry()
+
+
+class AvlResponse(BaseModel):
+    features: list[AvlFeature] = []
+
+
+# ── AATracking (Mt Pearl / Provincial) response models ───────────────
+
+# Map LOO_TYPE to normalized vehicle types matching St. John's AVL.
+_AATRACKING_TYPE_MAP = {
+    "HEAVY_TYPE": "LOADER",
+    "TRUCK_TYPE": "SA PLOW TRUCK",
+}
+
+
+class AATrackingItem(BaseModel):
+    VEH_ID: int
+    VEH_NAME: str = ""
+    VEH_EVENT_DATETIME: datetime | None = None
+    VEH_EVENT_LATITUDE: float = 0.0
+    VEH_EVENT_LONGITUDE: float = 0.0
+    VEH_EVENT_HEADING: float | None = 0.0
+    LOO_TYPE: str = ""
+    LOO_DESCRIPTION: str = ""
+
+    @field_validator("VEH_EVENT_DATETIME", mode="before")
+    @classmethod
+    def parse_datetime(cls, v):
+        """Handle missing, null, or malformed datetime strings."""
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            try:
+                dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except ValueError:
+                return None
+        return v
+
+    @property
+    def vehicle_type(self) -> str:
+        return _AATRACKING_TYPE_MAP.get(self.LOO_TYPE, self.LOO_TYPE or "Unknown")
+
+    @property
+    def description(self) -> str:
+        if self.LOO_DESCRIPTION:
+            return f"{self.VEH_NAME} ({self.LOO_DESCRIPTION})"
+        return self.VEH_NAME
+
+    @property
+    def bearing(self) -> int:
+        try:
+            return int(self.VEH_EVENT_HEADING)
+        except (ValueError, TypeError):
+            return 0
+
+
+# ── HitechMaps (Paradise) response models ────────────────────────────
+
+# Map TruckType to normalized vehicle types matching St. John's AVL.
+_HITECHMAPS_TYPE_MAP = {
+    "Plows": "SA PLOW TRUCK",
+    "Loaders": "LOADER",
+}
+
+
+class HitechMapsItem(BaseModel):
+    VID: str
+    Latitude: str = "0"
+    longitude: str = "0"  # Note: lowercase 'l' — their API is inconsistent
+    Bearing: str = "0"
+    Speed: str = "0"
+    DateTime: str = ""
+    Ignition: str = "0"
+    DeviceName: str = ""
+    TruckType: str = ""
+
+    @property
+    def lat(self) -> float:
+        try:
+            return float(self.Latitude)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @property
+    def lng(self) -> float:
+        try:
+            return float(self.longitude)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @property
+    def speed_float(self) -> float:
+        try:
+            return float(self.Speed)
+        except (ValueError, TypeError):
+            return 0.0
+
+    @property
+    def bearing_int(self) -> int:
+        try:
+            v = int(self.Bearing)
+            return v if v >= 0 else 0
+        except (ValueError, TypeError):
+            return 0
+
+    @property
+    def vehicle_type(self) -> str:
+        return _HITECHMAPS_TYPE_MAP.get(self.TruckType, self.TruckType or "Unknown")
+
+    @property
+    def is_driving(self) -> str:
+        """Ignition on AND moving → 'yes', otherwise 'no'."""
+        try:
+            ignition_on = self.Ignition == "1"
+            moving = float(self.Speed) > 0
+        except (ValueError, TypeError):
+            return "no"
+        return "yes" if ignition_on and moving else "no"
+
+    @property
+    def parsed_datetime(self) -> datetime | None:
+        """Parse the DateTime field (space-separated, no timezone)."""
+        if not self.DateTime:
+            return None
+        try:
+            dt = datetime.strptime(self.DateTime, "%Y-%m-%d %H:%M:%S")
+            # Assume Newfoundland Standard Time (UTC-3:30)
+            nst = timezone(timedelta(hours=-3, minutes=-30))
+            return dt.replace(tzinfo=nst)
+        except ValueError:
+            return None
+
+
+# ── Geotab Citizen Insights (CBS) response handling ──────────────────
+
+# The Geotab Citizen Insights API returns a minimal format:
+#   {"vehicleId": [lng, lat], ...}
+# No timestamps, speed, bearing, or vehicle names are provided.
+
+
+def parse_geotab_response(
+    data: dict, collected_at: datetime | None = None
+) -> tuple[list[dict], list[dict]]:
+    """Parse Geotab Citizen Insights vehicle-locations response (CBS).
+
+    The data is a flat dict mapping vehicle IDs to [lng, lat] arrays.
+    No metadata is available — timestamps use collected_at, and speed/bearing
+    are unknown.
+    """
+    now = collected_at or datetime.now(timezone.utc)
     vehicles = []
     positions = []
-    for feature in data.get("features", []):
-        attrs = feature["attributes"]
-        geom = feature.get("geometry", {})
-
-        vehicle_id = str(attrs["ID"])
-        naive_ts = datetime.fromtimestamp(
-            attrs["LocationDateTime"] / 1000, tz=timezone.utc
-        )
-        ts = naive_ts + _NST_CORRECTION
+    for vehicle_id, coords in data.items():
+        if not isinstance(coords, list) or len(coords) < 2:
+            continue
+        try:
+            lng = float(coords[0])
+            lat = float(coords[1])
+        except (ValueError, TypeError):
+            continue
 
         vehicles.append(
             {
                 "vehicle_id": vehicle_id,
-                "description": attrs.get("Description", ""),
-                "vehicle_type": attrs.get("VehicleType", ""),
+                "description": vehicle_id,
+                "vehicle_type": "SA PLOW TRUCK",
             }
         )
-
-        speed_raw = attrs.get("Speed", "0.0")
-        try:
-            speed = float(speed_raw)
-        except (ValueError, TypeError):
-            speed = 0.0
 
         positions.append(
             {
                 "vehicle_id": vehicle_id,
-                "timestamp": ts,
-                "longitude": geom.get("x", 0.0),
-                "latitude": geom.get("y", 0.0),
-                "bearing": attrs.get("Bearing", 0),
-                "speed": speed,
-                "is_driving": attrs.get("isDriving", ""),
+                "timestamp": now,
+                "longitude": lng,
+                "latitude": lat,
+                "bearing": 0,
+                "speed": None,
+                "is_driving": None,
             }
         )
 
     return vehicles, positions
 
 
-async def fetch_vehicles(client: httpx.AsyncClient) -> dict:
-    params = {
-        "f": "json",
-        "outFields": "ID,Description,VehicleType,LocationDateTime,Bearing,Speed,isDriving",
-        "outSR": "4326",
-        "returnGeometry": "true",
-        "where": "1=1",
-    }
-    headers = {
-        "Referer": settings.avl_referer,
-    }
-    resp = await client.get(
-        settings.avl_api_url, params=params, headers=headers, timeout=10
-    )
+# ── Parsers ──────────────────────────────────────────────────────────
+
+
+def parse_avl_response(data: dict) -> tuple[list[dict], list[dict]]:
+    response = AvlResponse.model_validate(data)
+
+    vehicles = []
+    positions = []
+    for feature in response.features:
+        attrs = feature.attributes
+        geom = feature.geometry
+
+        naive_ts = datetime.fromtimestamp(
+            attrs.LocationDateTime / 1000, tz=timezone.utc
+        )
+        ts = naive_ts + _NST_CORRECTION
+
+        vehicle_id = str(attrs.OBJECTID)
+
+        vehicles.append(
+            {
+                "vehicle_id": vehicle_id,
+                "description": attrs.VehicleType,
+                "vehicle_type": attrs.VehicleType,
+            }
+        )
+
+        positions.append(
+            {
+                "vehicle_id": vehicle_id,
+                "timestamp": ts,
+                "longitude": geom.x,
+                "latitude": geom.y,
+                "bearing": attrs.Bearing,
+                "speed": None,
+                "is_driving": attrs.isDriving,
+            }
+        )
+
+    return vehicles, positions
+
+
+def parse_aatracking_response(
+    data: list, collected_at: datetime | None = None
+) -> tuple[list[dict], list[dict]]:
+    """Parse AATracking portal response (Mt Pearl, Provincial).
+
+    Items that fail validation (missing VEH_ID, bad types) are silently
+    skipped — a single bad record shouldn't break the entire poll.
+    """
+    vehicles = []
+    positions = []
+    for raw_item in data:
+        try:
+            item = AATrackingItem.model_validate(raw_item)
+        except Exception:
+            continue
+
+        ts = item.VEH_EVENT_DATETIME or collected_at or datetime.now(timezone.utc)
+
+        vehicles.append(
+            {
+                "vehicle_id": str(item.VEH_ID),
+                "description": item.description,
+                "vehicle_type": item.vehicle_type,
+            }
+        )
+
+        positions.append(
+            {
+                "vehicle_id": str(item.VEH_ID),
+                "timestamp": ts,
+                "longitude": item.VEH_EVENT_LONGITUDE,
+                "latitude": item.VEH_EVENT_LATITUDE,
+                "bearing": item.bearing,
+                "speed": None,
+                "is_driving": None,
+            }
+        )
+
+    return vehicles, positions
+
+
+def parse_hitechmaps_response(
+    data: list, collected_at: datetime | None = None
+) -> tuple[list[dict], list[dict]]:
+    """Parse HitechMaps response (Paradise).
+
+    Items that fail validation are silently skipped.
+    """
+    vehicles = []
+    positions = []
+    for raw_item in data:
+        try:
+            item = HitechMapsItem.model_validate(raw_item)
+        except Exception:
+            continue
+
+        ts = item.parsed_datetime or collected_at or datetime.now(timezone.utc)
+
+        vehicles.append(
+            {
+                "vehicle_id": item.VID,
+                "description": item.DeviceName,
+                "vehicle_type": item.vehicle_type,
+            }
+        )
+
+        positions.append(
+            {
+                "vehicle_id": item.VID,
+                "timestamp": ts,
+                "longitude": item.lng,
+                "latitude": item.lat,
+                "bearing": item.bearing_int,
+                "speed": item.speed_float,
+                "is_driving": item.is_driving,
+            }
+        )
+
+    return vehicles, positions
+
+
+async def fetch_source(client: httpx.AsyncClient, source) -> dict | list:
+    """Fetch data from any source. Returns raw JSON (dict for AVL, list for AATracking)."""
+    headers = {}
+    params = {}
+
+    if source.parser == "avl":
+        params = {
+            "f": "json",
+            "outFields": "*",
+            "outSR": "4326",
+            "returnGeometry": "true",
+            "where": "1=1",
+        }
+        if source.referer:
+            headers["Referer"] = source.referer
+
+    if source.parser == "geotab":
+        # Two-step fetch: get signed URL, then fetch data from GCS bucket
+        resp = await client.get(source.api_url, timeout=10)
+        resp.raise_for_status()
+        signed_url = resp.json()["url"]
+
+        resp = await client.get(signed_url, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    resp = await client.get(source.api_url, params=params, headers=headers, timeout=10)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+
+    return data

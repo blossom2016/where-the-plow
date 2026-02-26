@@ -333,12 +333,27 @@ panelToggle.addEventListener("click", () => {
   panelToggle.textContent = isOpen ? "\u2715" : "\u2630";
 });
 
+/* ── Move map controls when panel is tall ──────────── */
+
+function updateControlPosition() {
+  const panel = document.getElementById("info-panel");
+  const panelHeight = panel.offsetHeight;
+  const viewportHeight = window.innerHeight;
+  // If panel uses >=70% of viewport height, shift controls left
+  document.body.classList.toggle("controls-left", panelHeight >= viewportHeight * 0.7);
+}
+
+const _panelObserver = new ResizeObserver(updateControlPosition);
+_panelObserver.observe(document.getElementById("info-panel"));
+window.addEventListener("resize", updateControlPosition);
+
 /* ── PlowMap class ─────────────────────────────────── */
 
 class PlowMap {
   constructor(container, options) {
     this.map = new maplibregl.Map({ container, ...options });
     this.coverageAbort = null;
+    this.deckOverlay = null;
   }
 
   on(event, layerOrCb, cb) {
@@ -574,119 +589,14 @@ class PlowMap {
 
   /* ── Coverage ───────────────────────────────────── */
 
-  renderCoverageLines(segmentData) {
-    const source = this.map.getSource("coverage-lines");
-    if (source) {
-      source.setData(segmentData);
-    } else {
-      this.map.addSource("coverage-lines", {
-        type: "geojson",
-        data: segmentData,
-      });
-      this.map.addLayer({
-        id: "coverage-lines",
-        type: "line",
-        source: "coverage-lines",
-        paint: {
-          "line-color": ["get", "seg_color"],
-          "line-width": 3,
-          "line-opacity": ["get", "seg_opacity"],
-        },
-      });
-    }
-  }
-
-  renderHeatmap(pointData) {
-    const source = this.map.getSource("coverage-heatmap");
-    if (source) {
-      source.setData(pointData);
-    } else {
-      this.map.addSource("coverage-heatmap", {
-        type: "geojson",
-        data: pointData,
-      });
-      this.map.addLayer({
-        id: "coverage-heatmap",
-        type: "heatmap",
-        source: "coverage-heatmap",
-        paint: {
-          "heatmap-weight": 0.5,
-          "heatmap-intensity": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            10,
-            0.5,
-            12,
-            1,
-            15,
-            2,
-          ],
-          "heatmap-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            10,
-            3,
-            12,
-            8,
-            14,
-            15,
-            16,
-            25,
-          ],
-          "heatmap-opacity": 0.75,
-          "heatmap-color": [
-            "interpolate",
-            ["linear"],
-            ["heatmap-density"],
-            0,
-            "rgba(0,0,0,0)",
-            0.15,
-            "#2563eb",
-            0.35,
-            "#60a5fa",
-            0.55,
-            "#fbbf24",
-            0.75,
-            "#f97316",
-            1.0,
-            "#ef4444",
-          ],
-        },
-      });
-    }
-  }
-
-  setCoverageLineVisibility(visible) {
-    if (this.map.getLayer("coverage-lines")) {
-      this.map.setLayoutProperty(
-        "coverage-lines",
-        "visibility",
-        visible ? "visible" : "none",
-      );
-    }
-  }
-
-  setHeatmapVisibility(visible) {
-    if (this.map.getLayer("coverage-heatmap")) {
-      this.map.setLayoutProperty(
-        "coverage-heatmap",
-        "visibility",
-        visible ? "visible" : "none",
-      );
-    }
-  }
-
   clearCoverage() {
-    if (this.map.getLayer("coverage-lines"))
-      this.map.removeLayer("coverage-lines");
-    if (this.map.getSource("coverage-lines"))
-      this.map.removeSource("coverage-lines");
-    if (this.map.getLayer("coverage-heatmap"))
-      this.map.removeLayer("coverage-heatmap");
-    if (this.map.getSource("coverage-heatmap"))
-      this.map.removeSource("coverage-heatmap");
+    this.setDeckLayers([]);
+  }
+
+  setDeckLayers(layers) {
+    if (this.deckOverlay) {
+      this.deckOverlay.setProps({ layers });
+    }
   }
 
   /* ── Type filtering ─────────────────────────────── */
@@ -696,8 +606,6 @@ class PlowMap {
       "vehicle-outline",
       "vehicle-circles",
       "mini-trails",
-      "coverage-lines",
-      "coverage-heatmap",
       "vehicle-trail-dots",
       "vehicle-trail-line",
     ];
@@ -724,12 +632,37 @@ class PlowMap {
   }
 }
 
+/* ── Map view persistence ──────────────────────────── */
+
+const MAP_VIEW_KEY = "wtp-map-view";
+
+function saveMapView() {
+  const c = plowMap.getCenter();
+  const z = plowMap.getZoom();
+  localStorage.setItem(
+    MAP_VIEW_KEY,
+    JSON.stringify({ center: [c.lng, c.lat], zoom: z })
+  );
+}
+
+function loadMapView() {
+  try {
+    const raw = localStorage.getItem(MAP_VIEW_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (Array.isArray(v.center) && typeof v.zoom === "number") return v;
+  } catch {}
+  return null;
+}
+
 /* ── Map init ──────────────────────────────────────── */
+
+const savedView = loadMapView();
 
 const plowMap = new PlowMap("map", {
   style: "https://tiles.openfreemap.org/styles/liberty",
-  center: [-52.71, 47.56],
-  zoom: 12,
+  center: savedView ? savedView.center : [-52.71, 47.56],
+  zoom: savedView ? savedView.zoom : 12,
 });
 
 const geolocate = new maplibregl.GeolocateControl({
@@ -739,6 +672,9 @@ const geolocate = new maplibregl.GeolocateControl({
 });
 plowMap.addControl(geolocate, "bottom-right");
 geolocate.on("geolocate", () => gtag("event", "geolocate"));
+
+// Persist map view to localStorage on every move
+plowMap.on("moveend", saveMapView);
 
 /* ── Analytics: debounced viewport tracking ────────── */
 
@@ -788,6 +724,14 @@ plowMap.on("moveend", () => {
 /* ── Utilities ─────────────────────────────────────── */
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const FIVE_MIN_MS = 5 * 60 * 1000;
+
+/** Round a Date down to the nearest 5-minute boundary. */
+function floorTo5Min(date) {
+  return new Date(Math.floor(date.getTime() / FIVE_MIN_MS) * FIVE_MIN_MS);
+}
+const VEHICLE_STALE_MS = 2 * 60 * 60 * 1000; // hide vehicles not seen in 2 hours
+const SOURCE_STALE_MS = 30 * 60 * 1000; // warn if source has no data in 30 minutes
 
 const VEHICLE_COLORS = {
   "SA PLOW TRUCK": "#2563eb",
@@ -800,6 +744,16 @@ const KNOWN_TYPES = ["SA PLOW TRUCK", "TA PLOW TRUCK", "LOADER", "GRADER"];
 
 function vehicleColor(type) {
   return VEHICLE_COLORS[type] || DEFAULT_COLOR;
+}
+
+/** Return [R, G, B] for a vehicle type — used by deck.gl layers. */
+function vehicleColorRGB(type) {
+  const hex = vehicleColor(type);
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
 }
 
 function buildMiniTrails(data) {
@@ -817,7 +771,7 @@ function buildMiniTrails(data) {
           type: "LineString",
           coordinates: [trail[i], trail[i + 1]],
         },
-        properties: { color, opacity, vehicle_type: f.properties.vehicle_type },
+        properties: { color, opacity, vehicle_type: f.properties.vehicle_type, source: f.properties.source },
       });
     }
   }
@@ -833,6 +787,17 @@ function formatTimestamp(ts) {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatDurationAgo(ms) {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  const remainMin = minutes % 60;
+  if (hours < 24) return remainMin > 0 ? `${hours}h ${remainMin}m ago` : `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  const remainHrs = hours % 24;
+  return remainHrs > 0 ? `${days}d ${remainHrs}h ago` : `${days}d ago`;
 }
 
 function formatBytes(bytes) {
@@ -867,7 +832,7 @@ function updateVehicleCount(data) {
 }
 
 function filterRecentFeatures(data) {
-  const cutoff = Date.now() - ONE_DAY_MS;
+  const cutoff = Date.now() - VEHICLE_STALE_MS;
   return {
     ...data,
     features: data.features.filter(
@@ -885,6 +850,7 @@ const detailType = document.getElementById("detail-type");
 const detailSpeed = document.getElementById("detail-speed");
 const detailBearing = document.getElementById("detail-bearing");
 const detailUpdated = document.getElementById("detail-updated");
+const detailSource = document.getElementById("detail-source");
 
 /* ── Vehicle trails ────────────────────────────────── */
 
@@ -931,6 +897,7 @@ function buildTrailSegments(features) {
         seg_opacity: features[i].properties.trail_opacity,
         seg_color: features[i].properties.trail_color,
         vehicle_type: features[i].properties.vehicle_type,
+        source: features[i].properties.source,
       },
     });
   }
@@ -985,7 +952,8 @@ function setPresetActive(value) {
 }
 
 function showLegend(type) {
-  // Vehicle legend (with type checkboxes) is always visible
+  // Source and vehicle legends are always visible
+  document.getElementById("legend-sources").style.display = "";
   document.getElementById("legend-vehicles").style.display = "";
   document.getElementById("legend-heatmap").style.display =
     type === "heatmap" ? "" : "none";
@@ -1023,6 +991,13 @@ class PlowApp {
     // Mode
     this.mode = "realtime";
 
+    // Sources
+    this.sources = {};
+    this.enabledSources = new Set();
+
+    // Last fetched vehicle data (for source fitBounds)
+    this.vehicleData = null;
+
     // Realtime
     this.refreshInterval = null;
     this.activeVehicleId = null;
@@ -1030,6 +1005,7 @@ class PlowApp {
 
     // Coverage
     this.coverageData = null;
+    this.deckTrips = null;
     this.coverageSince = null;
     this.coverageUntil = null;
     this.coveragePreset = "24";
@@ -1044,7 +1020,120 @@ class PlowApp {
       followVehicleId: null,
       startTime: null,
       animFrame: null,
+      lastRenderTime: 0,
     };
+  }
+
+  /* ── Sources ─────────────────────────────────────── */
+
+  async loadSources() {
+    try {
+      const resp = await fetch("/sources");
+      if (!resp.ok) throw new Error("Failed to load sources");
+      this.sources = await resp.json();
+    } catch (err) {
+      console.error("Failed to load sources:", err);
+      this.sources = {};
+    }
+
+    // Enable all sources by default
+    this.enabledSources = new Set(Object.keys(this.sources));
+
+    // Build legend checkboxes
+    const container = document.getElementById("legend-sources");
+    container.innerHTML = "";
+
+    const sourceKeys = Object.keys(this.sources);
+    if (sourceKeys.length <= 1) return; // Don't show source toggles for single source
+
+    const title = document.createElement("div");
+    title.className = "legend-section-title";
+    title.textContent = "Sources";
+    container.appendChild(title);
+
+    for (const key of sourceKeys) {
+      const src = this.sources[key];
+
+      const row = document.createElement("div");
+      row.className = "legend-source-row";
+      row.dataset.source = key;
+
+      const zoomBtn = document.createElement("button");
+      zoomBtn.className = "legend-zoom-btn";
+      zoomBtn.title = `Zoom to ${src.display_name}`;
+      zoomBtn.textContent = "\u2316"; // ⌖ position indicator
+      zoomBtn.dataset.source = key;
+
+      const label = document.createElement("label");
+      label.className = "legend-row";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = true;
+      cb.className = "legend-check";
+
+      const text = document.createTextNode(src.display_name);
+      label.appendChild(text);
+
+      // Staleness warning indicator
+      const staleIcon = document.createElement("span");
+      staleIcon.className = "source-stale-icon";
+      staleIcon.dataset.source = key;
+      staleIcon.textContent = "!";
+      staleIcon.style.display = "none";
+      label.appendChild(staleIcon);
+
+      label.appendChild(cb);
+
+      row.appendChild(zoomBtn);
+      row.appendChild(label);
+      container.appendChild(row);
+    }
+
+    // Initial staleness check
+    this.updateSourceStaleness();
+
+    // Also add a "Types" section title to the vehicle legend (idempotent)
+    const vehicleLegend = document.getElementById("legend-vehicles");
+    if (!vehicleLegend.querySelector(".legend-section-title")) {
+      const typeTitle = document.createElement("div");
+      typeTitle.className = "legend-section-title";
+      typeTitle.textContent = "Types";
+      vehicleLegend.insertBefore(typeTitle, vehicleLegend.firstChild);
+    }
+  }
+
+  updateSourceStaleness() {
+    const now = Date.now();
+    for (const [key, src] of Object.entries(this.sources)) {
+      const icon = document.querySelector(`.source-stale-icon[data-source="${key}"]`);
+      if (!icon) continue;
+
+      const lastUpdated = src.last_updated ? new Date(src.last_updated).getTime() : 0;
+      const age = now - lastUpdated;
+
+      if (!src.last_updated || age > SOURCE_STALE_MS) {
+        const agoText = src.last_updated ? formatDurationAgo(age) : "never";
+        icon.title = `No data received (last: ${agoText})`;
+        icon.style.display = "";
+      } else {
+        icon.style.display = "none";
+      }
+    }
+  }
+
+  getSourceDisplayName(sourceKey) {
+    const src = this.sources[sourceKey];
+    return src ? src.display_name : sourceKey;
+  }
+
+  buildSourceFilter() {
+    const allSources = Object.keys(this.sources);
+    if (allSources.length <= 1) return null; // No filter needed for single source
+    if (this.enabledSources.size === allSources.length) return null; // All enabled
+    if (this.enabledSources.size === 0) return false; // Nothing visible
+
+    return ["in", ["get", "source"], ["literal", [...this.enabledSources]]];
   }
 
   /* ── Type filtering ─────────────────────────────── */
@@ -1087,8 +1176,21 @@ class PlowApp {
     return ["any", ...parts];
   }
 
-  applyTypeFilters() {
-    this.map.setTypeFilter(this.buildTypeFilter());
+  applyFilters() {
+    const sourceFilter = this.buildSourceFilter();
+    const typeFilter = this.buildTypeFilter();
+
+    // null = show everything (no filter), false = hide everything
+    let combined;
+    if (sourceFilter === false || typeFilter === false) {
+      combined = false;
+    } else if (sourceFilter && typeFilter) {
+      combined = ["all", sourceFilter, typeFilter];
+    } else {
+      combined = sourceFilter || typeFilter;
+    }
+
+    this.map.setTypeFilter(combined);
   }
 
   /* -- Playback UI locking ---------------------------------- */
@@ -1147,6 +1249,7 @@ class PlowApp {
 
     this.playback.playing = true;
     this.playback.startTime = Date.now();
+    this.playback.lastRenderTime = 0;
     this.lockPlaybackUI();
     this.playbackTick();
   }
@@ -1158,6 +1261,9 @@ class PlowApp {
       this.playback.animFrame = null;
     }
     this.unlockPlaybackUI();
+    // Force a final unthrottled render so the last frame is accurate
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    this.renderCoverage(vals[0], vals[1]);
   }
 
   playbackTick() {
@@ -1184,9 +1290,7 @@ class PlowApp {
     }
 
     if (progress >= 1) {
-      this.playback.playing = false;
-      this.playback.animFrame = null;
-      this.unlockPlaybackUI();
+      this.stopPlayback();
       return;
     }
 
@@ -1207,6 +1311,7 @@ class PlowApp {
       const vid = f.properties.vehicle_id;
       if (seen.has(vid)) continue;
       if (!this.isTypeVisible(f.properties.vehicle_type)) continue;
+      if (!this.isSourceVisible(f.properties.source)) continue;
       seen.set(vid, f.properties.description);
     }
 
@@ -1225,6 +1330,12 @@ class PlowApp {
       select.value = "";
       this.playback.followVehicleId = null;
     }
+  }
+
+  isSourceVisible(source) {
+    const allSources = Object.keys(this.sources);
+    if (allSources.length <= 1) return true;
+    return this.enabledSources.has(source);
   }
 
   isTypeVisible(vehicleType) {
@@ -1251,11 +1362,11 @@ class PlowApp {
     for (const feature of this.coverageData.features) {
       if (feature.properties.vehicle_id !== vehicleId) continue;
       const coords = feature.geometry.coordinates;
-      const timestamps = feature.properties.timestamps;
+      const epochMs = feature.properties._epochMs;
 
-      for (let i = 0; i < timestamps.length - 1; i++) {
-        const t0 = new Date(timestamps[i]).getTime();
-        const t1 = new Date(timestamps[i + 1]).getTime();
+      for (let i = 0; i < epochMs.length - 1; i++) {
+        const t0 = epochMs[i];
+        const t1 = epochMs[i + 1];
         if (timeMs >= t0 && timeMs <= t1) {
           const frac = (timeMs - t0) / (t1 - t0);
           return [
@@ -1291,6 +1402,7 @@ class PlowApp {
     this.map.clearCoverage();
     coveragePanelEl.style.display = "none";
     this.coverageData = null;
+    this.deckTrips = null;
     this.map.setVehiclesVisible(true);
     this.map.setMiniTrailsVisible(true);
     document.getElementById("vehicle-count").style.display = "";
@@ -1310,7 +1422,7 @@ class PlowApp {
     this.map.setVehiclesVisible(false);
     this.map.setMiniTrailsVisible(false);
     document.getElementById("vehicle-count").style.display = "none";
-    document.getElementById("db-size").style.display = "none";
+    document.getElementById("db-size").style.display = "";
     vehicleHint.style.display = "none";
     coveragePanelEl.style.display = "block";
     btnPlay.disabled = true;
@@ -1327,6 +1439,10 @@ class PlowApp {
     this.stopPlayback();
     const signal = this.map.newCoverageSignal();
 
+    // Round to 5-minute boundaries so repeat loads hit the backend cache
+    since = floorTo5Min(since);
+    until = floorTo5Min(until);
+
     this.coverageSince = since;
     this.coverageUntil = until;
     this.updateRangeLabel();
@@ -1339,21 +1455,39 @@ class PlowApp {
         { signal },
       );
       this.coverageData = await resp.json();
+      // Pre-parse timestamp strings to epoch ms (once, not per frame)
+      const baseTime = since.getTime();
+      for (const feature of this.coverageData.features) {
+        feature.properties._epochMs = feature.properties.timestamps.map(
+          (t) => new Date(t).getTime()
+        );
+      }
+      // Transform to deck.gl trip format with float32-safe timestamp offsets
+      this.deckTrips = this.coverageData.features.map((f) => ({
+        path: f.geometry.coordinates,
+        timestamps: f.properties._epochMs.map((t) => t - baseTime),
+        color: vehicleColorRGB(f.properties.vehicle_type),
+        vehicleType: f.properties.vehicle_type,
+        source: f.properties.source,
+        vehicleId: f.properties.vehicle_id,
+      }));
     } catch (err) {
       if (err.name === "AbortError") return;
       throw err;
     }
     coverageLoading.style.display = "none";
     this.renderCoverage(0, 1000);
-    this.applyTypeFilters();
+    this.applyFilters();
     this.populateFollowDropdown();
     btnPlay.disabled = false;
   }
 
   async loadCoverageForDate(dateStr) {
     const start = new Date(dateStr + "T00:00:00");
-    const end = new Date(dateStr + "T23:59:59");
-    await this.loadCoverageForRange(start, end);
+    // Use next day midnight so the 5-min floor still covers the full day
+    const nextDay = new Date(start);
+    nextDay.setDate(nextDay.getDate() + 1);
+    await this.loadCoverageForRange(start, nextDay);
   }
 
   switchCoverageView(view) {
@@ -1365,11 +1499,16 @@ class PlowApp {
     showLegend(view === "heatmap" ? "heatmap" : "vehicles");
     const vals = timeSliderEl.noUiSlider.get().map(Number);
     this.renderCoverage(vals[0], vals[1]);
-    this.applyTypeFilters();
+    this.applyFilters();
   }
 
-  renderCoverage(fromVal, toVal) {
+  renderCoverage(fromVal, toVal, throttle = false) {
     if (!this.coverageData || this.mode !== "coverage") return;
+    if (throttle) {
+      const now = Date.now();
+      if (now - this.playback.lastRenderTime < 100) return;
+      this.playback.lastRenderTime = now;
+    }
     const fromTime = this.sliderToTime(fromVal);
     const toTime = this.sliderToTime(toVal);
     sliderLabel.innerHTML =
@@ -1381,82 +1520,100 @@ class PlowApp {
       "</span>";
 
     if (this.coverageView === "lines") {
-      this.map.setHeatmapVisibility(false);
       this.renderCoverageLines(fromTime, toTime);
-      this.map.setCoverageLineVisibility(true);
     } else {
-      this.map.setCoverageLineVisibility(false);
       this.renderHeatmap(fromTime, toTime);
-      this.map.setHeatmapVisibility(true);
     }
   }
 
   renderCoverageLines(fromTime, toTime) {
+    if (!this.deckTrips) return;
     const fromMs = fromTime.getTime();
-    const rangeMs = toTime.getTime() - fromMs;
+    const toMs = toTime.getTime();
+    const baseTime = this.coverageSince.getTime();
+    const fromOffset = fromMs - baseTime;
+    const toOffset = toMs - baseTime;
+    const zoom = plowMap.getZoom();
 
-    const segmentFeatures = [];
-    for (const feature of this.coverageData.features) {
-      const coords = feature.geometry.coordinates;
-      const timestamps = feature.properties.timestamps;
-      const color = vehicleColor(feature.properties.vehicle_type);
+    // Filter trips by source zoom visibility and active filters
+    const visibleTrips = this.deckTrips.filter((t) => {
+      const srcConfig = this.sources[t.source];
+      if (srcConfig && zoom < srcConfig.min_coverage_zoom) return false;
+      if (!this.isSourceVisible(t.source)) return false;
+      if (!this.isTypeVisible(t.vehicleType)) return false;
+      return true;
+    });
 
-      for (let i = 0; i < coords.length - 1; i++) {
-        const tMs = new Date(timestamps[i]).getTime();
-        const tNextMs = new Date(timestamps[i + 1]).getTime();
-        if (tMs < fromMs) continue;
-        if (tNextMs > toTime.getTime()) break;
-
-        const progress = rangeMs > 0 ? (tMs - fromMs) / rangeMs : 1;
-        const opacity = 0.15 + progress * 0.65;
-
-        segmentFeatures.push({
-          type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: [coords[i], coords[i + 1]],
-          },
-          properties: {
-            seg_opacity: opacity,
-            seg_color: color,
-            vehicle_type: feature.properties.vehicle_type,
-          },
-        });
-      }
-    }
-
-    const data = { type: "FeatureCollection", features: segmentFeatures };
-    this.map.renderCoverageLines(data);
+    this.map.setDeckLayers([
+      new deck.TripsLayer({
+        id: "coverage-trips",
+        data: visibleTrips,
+        getPath: (d) => d.path,
+        getTimestamps: (d) => d.timestamps,
+        getColor: (d) => d.color,
+        currentTime: toOffset,
+        trailLength: toOffset - fromOffset,
+        fadeTrail: true,
+        widthMinPixels: 4,
+        capRounded: true,
+        jointRounded: true,
+        shadowEnabled: false,
+      }),
+    ]);
   }
 
   renderHeatmap(fromTime, toTime) {
-    if (!this.coverageData) return;
-    const fromMs = fromTime.getTime();
-    const toMs = toTime.getTime();
+    if (!this.deckTrips) return;
+    const baseTime = this.coverageSince.getTime();
+    const fromOffset = fromTime.getTime() - baseTime;
+    const toOffset = toTime.getTime() - baseTime;
+    const zoom = plowMap.getZoom();
 
-    const pointFeatures = [];
-    for (const feature of this.coverageData.features) {
-      const coords = feature.geometry.coordinates;
-      const timestamps = feature.properties.timestamps;
-      for (let i = 0; i < coords.length; i++) {
-        const tMs = new Date(timestamps[i]).getTime();
-        if (tMs < fromMs) continue;
-        if (tMs > toMs) break;
-        pointFeatures.push({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: coords[i] },
-          properties: { vehicle_type: feature.properties.vehicle_type },
-        });
+    const points = [];
+    for (const trip of this.deckTrips) {
+      const srcConfig = this.sources[trip.source];
+      if (srcConfig && zoom < srcConfig.min_coverage_zoom) continue;
+      if (!this.isSourceVisible(trip.source)) continue;
+      if (!this.isTypeVisible(trip.vehicleType)) continue;
+      for (let i = 0; i < trip.path.length; i++) {
+        const t = trip.timestamps[i];
+        if (t < fromOffset) continue;
+        if (t > toOffset) break;
+        points.push(trip.path[i]);
       }
     }
 
-    const data = { type: "FeatureCollection", features: pointFeatures };
-    this.map.renderHeatmap(data);
+    this.map.setDeckLayers([
+      new deck.HeatmapLayer({
+        id: "coverage-heatmap",
+        data: points,
+        getPosition: (d) => d,
+        getWeight: 1,
+        radiusPixels: 30,
+        intensity: 1.2,
+        threshold: 0.03,
+        colorRange: [
+          [37, 99, 235],
+          [96, 165, 250],
+          [251, 191, 36],
+          [249, 115, 22],
+          [239, 68, 68],
+        ],
+        weightsTextureSize: 512,
+        debounceTimeout: 100,
+      }),
+    ]);
   }
 
   sliderToTime(val) {
     const range = this.coverageUntil.getTime() - this.coverageSince.getTime();
     return new Date(this.coverageSince.getTime() + (val / 1000) * range);
+  }
+
+  /** Convert slider value (0-1000) to ms offset from coverageSince. */
+  sliderToOffsetMs(val) {
+    const range = this.coverageUntil.getTime() - this.coverageSince.getTime();
+    return (val / 1000) * range;
   }
 
   updateRangeLabel() {
@@ -1472,11 +1629,13 @@ class PlowApp {
 
   startAutoRefresh() {
     if (this.refreshInterval) return;
+    this._sourceRefreshCounter = 0;
     this.refreshInterval = setInterval(async () => {
       if (this.mode !== "realtime") return;
       try {
         const rawData = await fetchVehicles();
         const freshData = filterRecentFeatures(rawData);
+        this.vehicleData = freshData;
         this.map.updateVehicles(freshData);
         this.map.updateMiniTrails(buildMiniTrails(freshData));
         updateVehicleCount(freshData);
@@ -1485,6 +1644,19 @@ class PlowApp {
       } catch (err) {
         console.error("Failed to refresh vehicles:", err);
       }
+
+      // Re-fetch sources every ~60s (10 ticks * 6s) to update staleness info
+      this._sourceRefreshCounter = (this._sourceRefreshCounter || 0) + 1;
+      if (this._sourceRefreshCounter >= 10) {
+        this._sourceRefreshCounter = 0;
+        try {
+          const resp = await fetch("/sources");
+          if (resp.ok) {
+            this.sources = await resp.json();
+          }
+        } catch (_) { /* ignore */ }
+      }
+      this.updateSourceStaleness();
     }, 6000);
   }
 
@@ -1500,9 +1672,10 @@ class PlowApp {
   showDetail(p) {
     detailName.textContent = p.description;
     detailType.textContent = p.vehicle_type;
-    detailSpeed.textContent = "Speed: " + p.speed + " km/h";
-    detailBearing.textContent = "Bearing: " + p.bearing + "\u00B0";
+    detailSpeed.textContent = p.speed != null ? "Speed: " + p.speed + " km/h" : "Speed: N/A";
+    detailBearing.textContent = p.bearing != null ? "Bearing: " + p.bearing + "\u00B0" : "Bearing: N/A";
     detailUpdated.textContent = "Updated: " + formatTimestamp(p.timestamp);
+    detailSource.textContent = "Source: " + this.getSourceDisplayName(p.source);
     vehicleHint.style.display = "none";
     detailPanel.style.display = "block";
   }
@@ -1540,7 +1713,7 @@ class PlowApp {
     };
 
     this.map.showTrail(trailData, lineData);
-    this.applyTypeFilters();
+    this.applyFilters();
   }
 
   async refreshTrail() {
@@ -1603,13 +1776,61 @@ btnHeatmap.addEventListener("click", () => app.switchCoverageView("heatmap"));
 // Slider
 timeSliderEl.noUiSlider.on("update", () => {
   const vals = timeSliderEl.noUiSlider.get().map(Number);
-  app.renderCoverage(vals[0], vals[1]);
+  const throttle = app.playback.playing && app.coverageView === "heatmap";
+  app.renderCoverage(vals[0], vals[1], throttle);
+});
+
+// Legend source checkboxes
+document.getElementById("legend-sources").addEventListener("change", (e) => {
+  const row = e.target.closest(".legend-source-row");
+  if (!row) return;
+  const sourceKey = row.dataset.source;
+  if (e.target.checked) {
+    app.enabledSources.add(sourceKey);
+  } else {
+    app.enabledSources.delete(sourceKey);
+  }
+  app.applyFilters();
+  app.populateFollowDropdown();
+  if (app.mode === "coverage") {
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    app.renderCoverage(vals[0], vals[1]);
+  }
+});
+
+// Legend source zoom buttons
+document.getElementById("legend-sources").addEventListener("click", (e) => {
+  const btn = e.target.closest(".legend-zoom-btn");
+  if (!btn) return;
+  const sourceKey = btn.dataset.source;
+
+  // Fit to the source's vehicle positions, fall back to default view
+  if (app.vehicleData) {
+    const features = app.vehicleData.features.filter(
+      (f) => f.properties && f.properties.source === sourceKey
+    );
+    if (features.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const f of features) bounds.extend(f.geometry.coordinates);
+      plowMap.map.fitBounds(bounds, { padding: 50, maxZoom: 13 });
+      return;
+    }
+  }
+  // No vehicles — fly to source's default center/zoom
+  if (app.sources[sourceKey]) {
+    const src = app.sources[sourceKey];
+    plowMap.map.flyTo({ center: src.center, zoom: src.zoom });
+  }
 });
 
 // Legend type checkboxes
 document.getElementById("legend-vehicles").addEventListener("change", () => {
-  app.applyTypeFilters();
+  app.applyFilters();
   app.populateFollowDropdown();
+  if (app.mode === "coverage") {
+    const vals = timeSliderEl.noUiSlider.get().map(Number);
+    app.renderCoverage(vals[0], vals[1]);
+  }
 });
 
 // Playback controls
@@ -1627,8 +1848,15 @@ document
 /* ── Map load: sources, layers, handlers ───────────── */
 
 plowMap.on("load", async () => {
+  // Initialize deck.gl overlay for coverage rendering
+  plowMap.deckOverlay = new deck.MapboxOverlay({ layers: [] });
+  plowMap.map.addControl(plowMap.deckOverlay);
+
+  await app.loadSources();
+
   const rawData = await fetchVehicles();
   const data = filterRecentFeatures(rawData);
+  app.vehicleData = data;
   updateVehicleCount(data);
 
   plowMap.initVehicles(data);

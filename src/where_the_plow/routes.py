@@ -42,6 +42,40 @@ _search_limiter = RateLimiter(
 )  # 6 searches per min per IP
 
 
+# ── In-memory coverage cache for recent (non-historical) queries ──────
+
+_COVERAGE_TTL = 5 * 60  # 5 minutes — matches frontend rounding interval
+_COVERAGE_MAX = 20  # max entries before evicting oldest
+
+# key = (since_iso, until_iso, source|None)  ->  (expires_at_monotonic, trails)
+_coverage_cache: dict[tuple, tuple[float, list[dict]]] = {}
+
+
+def _coverage_cache_get(
+    since: datetime, until: datetime, source: str | None
+) -> list[dict] | None:
+    key = (since.isoformat(), until.isoformat(), source)
+    entry = _coverage_cache.get(key)
+    if entry is None:
+        return None
+    expires_at, trails = entry
+    if time.monotonic() > expires_at:
+        del _coverage_cache[key]
+        return None
+    return trails
+
+
+def _coverage_cache_put(
+    since: datetime, until: datetime, source: str | None, trails: list[dict]
+) -> None:
+    key = (since.isoformat(), until.isoformat(), source)
+    # Evict oldest if full
+    if len(_coverage_cache) >= _COVERAGE_MAX and key not in _coverage_cache:
+        oldest_key = min(_coverage_cache, key=lambda k: _coverage_cache[k][0])
+        del _coverage_cache[oldest_key]
+    _coverage_cache[key] = (time.monotonic() + _COVERAGE_TTL, trails)
+
+
 # ── Nominatim search proxy with in-memory cache ──────
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -121,6 +155,7 @@ def _rows_to_feature_collection(rows: list[dict], limit: int) -> FeatureCollecti
                     bearing=r["bearing"],
                     is_driving=r["is_driving"],
                     timestamp=ts_str,
+                    source=r.get("source", "st_johns"),
                 ),
             )
         )
@@ -139,6 +174,63 @@ def _rows_to_feature_collection(rows: list[dict], limit: int) -> FeatureCollecti
     )
 
 
+def _source_last_updated(snapshots: dict[str, dict], source_name: str) -> str | None:
+    """Derive the most recent vehicle timestamp from a source's cached snapshot."""
+    fc = snapshots.get(source_name)
+    if not fc:
+        return None
+    features = fc.get("features", [])
+    if not features:
+        return None
+    latest = max(
+        (
+            f["properties"]["timestamp"]
+            for f in features
+            if f.get("properties", {}).get("timestamp")
+        ),
+        default=None,
+    )
+    return latest
+
+
+@router.get(
+    "/sources",
+    summary="Available data sources",
+    description="Returns metadata about each configured plow data source, "
+    "including the timestamp of the most recent vehicle position per source.",
+    tags=["sources"],
+)
+def get_sources(request: Request):
+    from where_the_plow.config import SOURCES
+
+    store = getattr(request.app.state, "store", {})
+    snapshots = store.get("realtime", {})
+
+    return {
+        name: {
+            "display_name": src.display_name,
+            "center": list(src.center),
+            "zoom": src.zoom,
+            "enabled": src.enabled,
+            "min_coverage_zoom": src.min_coverage_zoom,
+            "last_updated": _source_last_updated(snapshots, name),
+        }
+        for name, src in SOURCES.items()
+        if src.enabled
+    }
+
+
+def _merge_realtime_snapshots(snapshots: dict[str, dict]) -> dict:
+    """Merge per-source realtime FeatureCollection dicts into one."""
+    merged_features = []
+    for fc in snapshots.values():
+        merged_features.extend(fc.get("features", []))
+    return {
+        "type": "FeatureCollection",
+        "features": merged_features,
+    }
+
+
 @router.get(
     "/vehicles",
     response_model=FeatureCollection,
@@ -155,14 +247,24 @@ def get_vehicles(
     after: datetime | None = Query(
         None, description="Cursor: return features after this timestamp (ISO 8601)"
     ),
+    source: str | None = Query(
+        None,
+        description="Filter by data source (e.g. 'st_johns', 'mt_pearl', 'provincial')",
+    ),
 ):
     # Return cached realtime snapshot if available and no pagination cursor
     store = getattr(request.app.state, "store", {})
     if after is None and "realtime" in store:
-        return JSONResponse(content=store["realtime"])
+        snapshots = store["realtime"]
+        if source is not None:
+            if source in snapshots:
+                return JSONResponse(content=snapshots[source])
+            # source not in cache — fall through to DB query
+        else:
+            return JSONResponse(content=_merge_realtime_snapshots(snapshots))
 
     db = request.app.state.db
-    rows = db.get_latest_positions(limit=limit, after=after)
+    rows = db.get_latest_positions(limit=limit, after=after, source=source)
     return _rows_to_feature_collection(rows, limit)
 
 
@@ -185,10 +287,14 @@ def get_vehicles_nearby(
     after: datetime | None = Query(
         None, description="Cursor: return features after this timestamp (ISO 8601)"
     ),
+    source: str | None = Query(
+        None,
+        description="Filter by data source (e.g. 'st_johns', 'mt_pearl', 'provincial')",
+    ),
 ):
     db = request.app.state.db
     rows = db.get_nearby_vehicles(
-        lat=lat, lng=lng, radius_m=radius, limit=limit, after=after
+        lat=lat, lng=lng, radius_m=radius, limit=limit, after=after, source=source
     )
     return _rows_to_feature_collection(rows, limit)
 
@@ -216,6 +322,10 @@ def get_vehicle_history(
     after: datetime | None = Query(
         None, description="Cursor: return features after this timestamp (ISO 8601)"
     ),
+    source: str | None = Query(
+        None,
+        description="Filter by data source (e.g. 'st_johns', 'mt_pearl', 'provincial')",
+    ),
 ):
     db = request.app.state.db
     now = datetime.now(timezone.utc)
@@ -224,7 +334,7 @@ def get_vehicle_history(
     if until is None:
         until = now
     rows = db.get_vehicle_history(
-        vehicle_id, since=since, until=until, limit=limit, after=after
+        vehicle_id, since=since, until=until, limit=limit, after=after, source=source
     )
     return _rows_to_feature_collection(rows, limit)
 
@@ -246,6 +356,10 @@ def get_coverage(
     until: datetime | None = Query(
         None, description="End of time range (ISO 8601). Default: now."
     ),
+    source: str | None = Query(
+        None,
+        description="Filter by data source (e.g. 'st_johns', 'mt_pearl', 'provincial')",
+    ),
 ):
     db = request.app.state.db
     now = datetime.now(timezone.utc)
@@ -254,13 +368,21 @@ def get_coverage(
     if until is None:
         until = now
 
-    # Check file cache (only hits for fully-historical queries)
-    cached = cache.get(since, until)
-    if cached is not None:
-        trails = cached
-    else:
-        trails = db.get_coverage_trails(since=since, until=until)
-        cache.put(since, until, trails)
+    # 1. In-memory cache (short TTL, works for recent/live queries)
+    trails = _coverage_cache_get(since, until, source)
+    if trails is None:
+        # 2. File cache (historical queries only, no source filter)
+        if source is None:
+            trails = cache.get(since, until)
+        if trails is None:
+            trails = db.get_coverage_trails(
+                since=since, until=until, **({"source": source} if source else {})
+            )
+            # Populate file cache for historical queries
+            if source is None:
+                cache.put(since, until, trails)
+        # Populate in-memory cache for all queries
+        _coverage_cache_put(since, until, source, trails)
 
     features = [
         CoverageFeature(
@@ -270,6 +392,7 @@ def get_coverage(
                 vehicle_type=t["vehicle_type"],
                 description=t["description"],
                 timestamps=t["timestamps"],
+                source=t.get("source", "st_johns"),
             ),
         )
         for t in trails

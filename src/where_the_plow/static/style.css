@@ -43,6 +43,18 @@ body {
     height: 100%;
 }
 
+/* ── Map controls: shift left when panel is tall ───── */
+
+body.controls-left .maplibregl-ctrl-bottom-right {
+    left: 0;
+    right: auto;
+}
+
+body.controls-left .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+    float: left;
+    margin: 0 0 10px 10px;
+}
+
 /* ── Info panel ────────────────────────────────────── */
 
 #info-panel {
@@ -59,6 +71,9 @@ body {
     z-index: 10;
     width: 260px;
     backdrop-filter: blur(6px);
+    max-height: calc(100vh - 12px - 12px);
+    overflow-y: auto;
+    box-sizing: border-box;
 }
 
 #info-panel h3 {
@@ -353,6 +368,19 @@ body {
     display: none;
 }
 
+/* ── Ko-fi widget ──────────────────────────────────── */
+
+#kofi-container {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: var(--border-subtle);
+    text-align: center;
+}
+
+#kofi-container .btn-container {
+    display: inline-block !important;
+}
+
 /* ── Panel footer ──────────────────────────────────── */
 
 #panel-footer {
@@ -431,14 +459,49 @@ body {
     margin-bottom: 6px;
 }
 
+.legend-source-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 4px;
+}
+
+.legend-zoom-btn {
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    line-height: 1;
+    padding: 0;
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    transition: color 0.15s;
+}
+
+.legend-zoom-btn:hover {
+    color: var(--color-accent);
+}
+
 .legend-row {
     display: flex;
     align-items: center;
     gap: 7px;
     font-size: 0.78rem;
     color: var(--color-text);
-    margin-bottom: 4px;
     cursor: pointer;
+    flex: 1;
+}
+
+/* Vehicle type rows use .legend-row directly (no wrapper) */
+#legend-vehicles .legend-row {
+    margin-bottom: 4px;
 }
 
 .legend-check {
@@ -452,6 +515,41 @@ body {
     height: 12px;
     border-radius: 50%;
     flex-shrink: 0;
+}
+
+#legend-sources {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: var(--border-subtle);
+}
+
+#legend-sources:empty {
+    display: none;
+}
+
+.source-stale-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #f59e0b;
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-left: 4px;
+    cursor: help;
+}
+
+.legend-section-title {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin-bottom: 4px;
 }
 
 .legend-gradient {
@@ -671,6 +769,17 @@ body {
 
     #info-panel.open {
         display: block;
+    }
+
+    /* Move map controls to the left so they don't sit behind the panel */
+    .maplibregl-ctrl-bottom-right {
+        left: 0;
+        right: auto;
+    }
+
+    .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
+        float: left;
+        margin: 0 0 10px 10px;
     }
 }
 

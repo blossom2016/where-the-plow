@@ -1,4 +1,5 @@
 CLAUDE.md
+.env
 data/
 __pycache__/
 *.pyc
@@ -7,3 +8,5 @@ __pycache__/
 dist/
 .ruff_cache/
 src/where_the_plow/static/changelog.html
+tmp
+.DS_Store

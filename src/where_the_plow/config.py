@@ -1,16 +1,46 @@
-import os
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from where_the_plow.source_config import SourceConfig, build_sources
 
 
-class Settings:
-    def __init__(self):
-        self.db_path: str = os.environ.get("DB_PATH", "/data/plow.db")
-        self.poll_interval: int = int(os.environ.get("POLL_INTERVAL", "6"))
-        self.log_level: str = os.environ.get("LOG_LEVEL", "INFO")
-        self.avl_api_url: str = os.environ.get(
-            "AVL_API_URL",
-            "https://map.stjohns.ca/mapsrv/rest/services/AVL/MapServer/0/query",
-        )
-        self.avl_referer: str = "https://map.stjohns.ca/avl/"
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+    # Application
+    db_path: str = "/data/plow.db"
+    log_level: str = "INFO"
+
+    # Source API URLs
+    avl_api_url: str = (
+        "https://map.stjohns.ca/mapsrv/rest/services/AVL/MapServer/0/query"
+    )
+    mt_pearl_api_url: str = "https://gps5.aatracking.com/api/MtPearlPortal/GetPlows"
+    provincial_api_url: str = (
+        "https://gps5.aatracking.com/api/NewfoundlandPortal/GetPlows"
+    )
+    paradise_api_url: str = "https://hitechmaps.com/townparadise/db.php"
+    cbs_api_url: str = (
+        "https://citizeninsights.geotab.com/urlForFileFromBucket/Canada/"
+        "equipment-tracker-cbs-lp038h1u-b27A7-vehicle-locations.json"
+    )
+
+    # Source enable/disable
+    source_st_johns_enabled: bool = True
+    source_mt_pearl_enabled: bool = True
+    source_provincial_enabled: bool = True
+    source_paradise_enabled: bool = True
+    source_cbs_enabled: bool = True
+
+    # Source poll intervals (seconds)
+    source_st_johns_poll_interval: int = 6
+    source_mt_pearl_poll_interval: int = 30
+    source_provincial_poll_interval: int = 30
+    source_paradise_poll_interval: int = 10
+    source_cbs_poll_interval: int = 15
 
 
 settings = Settings()
+SOURCES: dict[str, SourceConfig] = build_sources(settings)
