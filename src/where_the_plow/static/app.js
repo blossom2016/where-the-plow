@@ -724,6 +724,12 @@ plowMap.on("moveend", () => {
 /* ── Utilities ─────────────────────────────────────── */
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const FIVE_MIN_MS = 5 * 60 * 1000;
+
+/** Round a Date down to the nearest 5-minute boundary. */
+function floorTo5Min(date) {
+  return new Date(Math.floor(date.getTime() / FIVE_MIN_MS) * FIVE_MIN_MS);
+}
 const VEHICLE_STALE_MS = 2 * 60 * 60 * 1000; // hide vehicles not seen in 2 hours
 const SOURCE_STALE_MS = 30 * 60 * 1000; // warn if source has no data in 30 minutes
 
@@ -1433,6 +1439,10 @@ class PlowApp {
     this.stopPlayback();
     const signal = this.map.newCoverageSignal();
 
+    // Round to 5-minute boundaries so repeat loads hit the backend cache
+    since = floorTo5Min(since);
+    until = floorTo5Min(until);
+
     this.coverageSince = since;
     this.coverageUntil = until;
     this.updateRangeLabel();
@@ -1474,8 +1484,10 @@ class PlowApp {
 
   async loadCoverageForDate(dateStr) {
     const start = new Date(dateStr + "T00:00:00");
-    const end = new Date(dateStr + "T23:59:59");
-    await this.loadCoverageForRange(start, end);
+    // Use next day midnight so the 5-min floor still covers the full day
+    const nextDay = new Date(start);
+    nextDay.setDate(nextDay.getDate() + 1);
+    await this.loadCoverageForRange(start, nextDay);
   }
 
   switchCoverageView(view) {
@@ -1587,6 +1599,8 @@ class PlowApp {
           [249, 115, 22],
           [239, 68, 68],
         ],
+        weightsTextureSize: 512,
+        debounceTimeout: 100,
       }),
     ]);
   }
